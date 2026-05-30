@@ -4,12 +4,24 @@
 /proguard
 /design
 /dist
+/docs/release.md
+/docs/internal
 /.agents
 /.codex
 
 # Local configuration file (sdk path, etc)
 /local.properties
 /keystore.jks
+/keystore.properties
+/signing
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.asc
+.env
+.env.*
 
 # Android Studio
 .idea

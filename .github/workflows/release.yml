@@ -1,0 +1,181 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version, for example 0.0.1. Leave empty to use version.properties.'
+        required: false
+        type: string
+      bump:
+        description: 'Version bump when version is empty.'
+        required: true
+        default: none
+        type: choice
+        options:
+          - none
+          - patch
+          - minor
+          - major
+      draft:
+        description: 'Create the GitHub Release as a draft.'
+        required: true
+        default: false
+        type: boolean
+      prerelease:
+        description: 'Mark the GitHub Release as a prerelease.'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+env:
+  ANDROID_HOME: /usr/local/lib/android/sdk
+  ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+  GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8
+
+jobs:
+  release:
+    name: Build signed APK and publish release
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Resolve release version
+        id: version
+        run: ./scripts/resolve-release-version.sh --bump "${{ inputs.bump }}" --version "${{ inputs.version }}" --write-env "$GITHUB_OUTPUT"
+
+      - name: Ensure release tag does not exist
+        run: |
+          set -euo pipefail
+          git fetch --tags origin
+          if git rev-parse -q --verify "refs/tags/${{ steps.version.outputs.tag }}" >/dev/null; then
+            echo "Tag ${{ steps.version.outputs.tag }} already exists locally." >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+            echo "Tag ${{ steps.version.outputs.tag }} already exists on origin." >&2
+            exit 1
+          fi
+
+      - name: Run unit tests before loading signing secrets
+        run: ./gradlew --no-daemon --max-workers=2 :mobile:testDebugUnitTest :shared:testDebugUnitTest
+
+      - name: Validate signing secrets
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in PRISM_RELEASE_KEYSTORE_BASE64 PRISM_KEYSTORE_PASSWORD PRISM_KEY_ALIAS PRISM_KEY_PASSWORD; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required repository secret: $name" >&2
+              missing=1
+            fi
+          done
+          exit "$missing"
+        env:
+          PRISM_RELEASE_KEYSTORE_BASE64: ${{ secrets.PRISM_RELEASE_KEYSTORE_BASE64 }}
+          PRISM_KEYSTORE_PASSWORD: ${{ secrets.PRISM_KEYSTORE_PASSWORD }}
+          PRISM_KEY_ALIAS: ${{ secrets.PRISM_KEY_ALIAS }}
+          PRISM_KEY_PASSWORD: ${{ secrets.PRISM_KEY_PASSWORD }}
+
+      - name: Decode release keystore
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$RUNNER_TEMP/prism-signing"
+          printf '%s' "$PRISM_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/prism-signing/release.jks"
+          chmod 600 "$RUNNER_TEMP/prism-signing/release.jks"
+        env:
+          PRISM_RELEASE_KEYSTORE_BASE64: ${{ secrets.PRISM_RELEASE_KEYSTORE_BASE64 }}
+
+      - name: Build signed release APK
+        run: ./gradlew --no-daemon --max-workers=2 :assembly:assembleCompleteNormalRelease
+        env:
+          PRISM_RELEASE_KEYSTORE_PATH: ${{ runner.temp }}/prism-signing/release.jks
+          PRISM_KEYSTORE_PASSWORD: ${{ secrets.PRISM_KEYSTORE_PASSWORD }}
+          PRISM_KEY_ALIAS: ${{ secrets.PRISM_KEY_ALIAS }}
+          PRISM_KEY_PASSWORD: ${{ secrets.PRISM_KEY_PASSWORD }}
+
+      - name: Verify APK signature
+        run: |
+          set -euo pipefail
+          APK="assembly/build/outputs/apk/completeNormal/release/assembly-complete-normal-release.apk"
+          if [[ ! -f "$APK" ]]; then
+            echo "Release APK not found at $APK" >&2
+            exit 1
+          fi
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          if [[ -z "$APKSIGNER" ]]; then
+            echo "apksigner not found under $ANDROID_HOME/build-tools" >&2
+            exit 1
+          fi
+          "$APKSIGNER" verify --print-certs "$APK"
+
+      - name: Prepare release assets
+        id: assets
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          APK_IN="assembly/build/outputs/apk/completeNormal/release/assembly-complete-normal-release.apk"
+          APK_OUT="PrismSpace-v${VERSION}.apk"
+          SHA_OUT="${APK_OUT}.sha256"
+          cp "$APK_IN" "$APK_OUT"
+          sha256sum "$APK_OUT" > "$SHA_OUT"
+          {
+            echo "apk=$APK_OUT"
+            echo "sha=$SHA_OUT"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Commit version update
+        if: steps.version.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add version.properties
+          git commit -m "chore: release ${{ steps.version.outputs.tag }}"
+
+      - name: Push release commit and tag
+        run: |
+          set -euo pipefail
+          git tag -a "${{ steps.version.outputs.tag }}" -m "PrismSpace ${{ steps.version.outputs.tag }}"
+          git push origin HEAD:main
+          git push origin "${{ steps.version.outputs.tag }}"
+
+      - name: Create GitHub Release
+        run: |
+          set -euo pipefail
+          args=(
+            release create "${{ steps.version.outputs.tag }}"
+            "${{ steps.assets.outputs.apk }}"
+            "${{ steps.assets.outputs.sha }}"
+            --title "PrismSpace ${{ steps.version.outputs.tag }}"
+            --generate-notes
+          )
+          if [[ "${{ inputs.draft }}" == "true" ]]; then args+=(--draft); fi
+          if [[ "${{ inputs.prerelease }}" == "true" ]]; then args+=(--prerelease); fi
+          gh "${args[@]}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Remove decoded keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/prism-signing/release.jks"

@@ -1,6 +1,28 @@
 apply plugin: 'com.android.application'
 
 def prismApplicationId = "com.yzddmr6.prismspace"
+def prismVersionFile = rootProject.file('version.properties')
+if (!prismVersionFile.isFile()) throw new GradleException('Missing version.properties')
+
+def prismVersionProperties = new Properties()
+prismVersionFile.withInputStream { prismVersionProperties.load(it) }
+
+def prismVersionName = prismVersionProperties.getProperty('VERSION_NAME')?.trim()
+def prismVersionCodeText = prismVersionProperties.getProperty('VERSION_CODE')?.trim()
+if (!prismVersionName) throw new GradleException('VERSION_NAME is missing in version.properties')
+if (!(prismVersionName ==~ /\d+\.\d+\.\d+/)) {
+    throw new GradleException("VERSION_NAME must use x.y.z format, got '${prismVersionName}'")
+}
+if (!(prismVersionCodeText ==~ /[1-9]\d*/)) {
+    throw new GradleException("VERSION_CODE must be a positive integer, got '${prismVersionCodeText}'")
+}
+
+def prismReleaseKeystorePath = System.getenv('PRISM_RELEASE_KEYSTORE_PATH')
+def prismReleaseSigningConfigured =
+        prismReleaseKeystorePath &&
+        System.getenv('PRISM_KEYSTORE_PASSWORD') &&
+        System.getenv('PRISM_KEY_ALIAS') &&
+        System.getenv('PRISM_KEY_PASSWORD')
 
 android {
     namespace 'com.yzddmr6.prismspace'
@@ -9,6 +31,8 @@ android {
 
     defaultConfig {
         applicationId prismApplicationId
+        versionName prismVersionName
+        versionCode prismVersionCodeText.toInteger()
         minSdkVersion this.minSdkVersion
         targetSdkVersion 35
         resourceConfigurations += ['en', 'zh', 'zh-rTW']
@@ -17,10 +41,22 @@ android {
 
     buildFeatures.dataBinding true
 
+    signingConfigs {
+        release {
+            if (prismReleaseSigningConfigured) {
+                storeFile file(prismReleaseKeystorePath)
+                storePassword System.getenv('PRISM_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('PRISM_KEY_ALIAS')
+                keyPassword System.getenv('PRISM_KEY_PASSWORD')
+            }
+        }
+    }
+
     buildTypes {
         debug {}
         release {
             minifyEnabled true
+            if (prismReleaseSigningConfigured) signingConfig signingConfigs.release
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
