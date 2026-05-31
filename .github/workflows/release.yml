@@ -144,12 +144,16 @@ jobs:
             echo "sha=$SHA_OUT"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Commit version update
-        if: steps.version.outputs.changed == 'true'
+      - name: Configure release git identity
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Commit version update
+        if: steps.version.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
           git add version.properties
           git commit -m "chore: release ${{ steps.version.outputs.tag }}"
 
