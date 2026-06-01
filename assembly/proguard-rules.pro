@@ -11,8 +11,9 @@
 }
 
 # For generics reflection to work
--keepattributes Signature
+-keepattributes Signature,InnerClasses,EnclosingMethod
 -keepattributes *Annotation*
+-keep interface com.yzddmr6.prismspace.util.Hacks$* { *; }
 
 # Keep source file and line number attributes for crash reports.
 -renamesourcefileattribute SourceFile

@@ -3,6 +3,8 @@
     <!-- FileBridgeService 用户可见的传输结果 -->
     <string name="fb_need_create_space">需要先创建双开空间</string>
     <string name="fb_space_not_ready">双开空间未就绪</string>
+    <string name="fb_space_inactive">双开空间已暂停，请先开启工作应用后重试。</string>
+    <string name="fb_space_bridge_repair_needed">双开空间需要重新连接后才能复制文件。</string>
     <string name="fb_imported_to_dual">已导入到双开空间：%1$s</string>
     <string name="fb_imported_to_main">已导入到主空间：%1$s</string>
     <string name="fb_imported_to_main_gallery">已导入到主空间相册：%1$s</string>
@@ -23,6 +25,8 @@
     <string name="fb_open_files_failed">无法打开双开空间文件管理（系统转发不可用）</string>
     <string name="fb_opened_downloads">已打开双开空间下载目录</string>
     <string name="fb_opened_profile_entry">已打开棱镜-双开空间</string>
+    <string name="fb_opened_cross_profile_permission">已打开 Android 跨资料访问授权页，请授权后重试。</string>
+    <string name="fb_opened_profile_entry_retry">已打开棱镜-双开空间，请在完成重连后返回棱镜空间重试。</string>
     <string name="fb_open_downloads_failed">无法打开双开空间下载目录</string>
     <string name="fb_no_files_to_export">双开空间没有可导出的 PrismSpace 文件</string>
     <string name="fb_exported_to_main">已导出到主空间：%1$s</string>

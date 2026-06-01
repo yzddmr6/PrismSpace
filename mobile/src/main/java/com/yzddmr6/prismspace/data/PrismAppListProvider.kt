@@ -20,6 +20,7 @@ import com.yzddmr6.prismspace.data.helper.installed
 import com.yzddmr6.prismspace.engine.ClonedHiddenSystemApps
 import com.yzddmr6.prismspace.provisioning.SystemAppsManager
 import com.yzddmr6.prismspace.shuttle.Shuttle
+import com.yzddmr6.prismspace.shuttle.ShuttleOutcome
 import com.yzddmr6.prismspace.util.Users
 import com.yzddmr6.prismspace.util.Users.Companion.isParentProfile
 import com.yzddmr6.prismspace.util.Users.Companion.toId
@@ -110,12 +111,26 @@ class PrismAppListProvider : AppListProvider<PrismAppInfo>() {
 		// On recent Android builds, MATCH_UNINSTALLED_PACKAGES or MATCH_ALL in the parent user
 		// no longer returns frozen apps in PrismSpace.
 		val appsInProfile = if (profile != Users.current()) {
-			Shuttle(context(), to = profile).invokeNoThrows {
+			when (val outcome = Shuttle(context(), to = profile).invokeOutcomeWithin {
 				val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
 				packageManager.getInstalledApplications(PM_FLAGS_APP_INFO) +
 					packageManager.queryIntentActivities(launcher, 0).mapNotNull { it.activityInfo?.applicationInfo }
-			}?.asSequence()
-			} else (context().packageManager.getInstalledApplications(PM_FLAGS_APP_INFO)
+			}) {
+				is ShuttleOutcome.Value -> outcome.value?.asSequence()
+				is ShuttleOutcome.NotReady -> null.also {
+					Log.w(TAG, "Unable to refresh profile apps user=${profile.toId()}: shuttle not ready ${outcome.cause}")
+				}
+				ShuttleOutcome.TimedOut -> null.also {
+					Log.w(TAG, "Unable to refresh profile apps user=${profile.toId()}: shuttle timed out")
+				}
+				is ShuttleOutcome.Failed -> null.also {
+					Log.w(TAG, "Unable to refresh profile apps user=${profile.toId()}", outcome.error)
+				}
+				is ShuttleOutcome.Skipped -> null.also {
+					Log.w(TAG, "Unable to refresh profile apps user=${profile.toId()}: ${outcome.reason}")
+				}
+			}
+		} else (context().packageManager.getInstalledApplications(PM_FLAGS_APP_INFO)
 				+ context().queryLaunchableAppsInCurrentUser()).asSequence()
 		// Mix visible apps from LauncherApps with invisible frozen apps from PackageManager.
 		// Collect all visible (unfrozen) apps first in one API call, to reduce later getAppInfo() calls.

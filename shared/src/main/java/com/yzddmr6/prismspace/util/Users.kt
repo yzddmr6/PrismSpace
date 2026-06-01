@@ -91,14 +91,27 @@ class Users : PseudoContentProvider() {
 			sProfilesManagedByPrism = profilesByPrism
 		}
 
-		fun isProfileRunning(context: Context, user: UserHandle): Boolean {
-			if (CURRENT == user) return true
-			val um = context.getSystemService<UserManager>()!!
-			if (SDK_INT >= N_MR1)
-				try { return um.isUserRunning(user) }
-				catch (e: RuntimeException) { Log.w(TAG, "Error checking running state for user ${user.toId()}") }
-			return um.isQuietModeEnabled(user)
-		}
+			fun isProfileRunning(context: Context, user: UserHandle): Boolean {
+				if (CURRENT == user) return true
+				val um = context.getSystemService<UserManager>()!!
+				if (SDK_INT >= N_MR1)
+					try { return um.isUserRunning(user) }
+					catch (e: RuntimeException) { Log.w(TAG, "Error checking running state for user ${user.toId()}") }
+				return ! isProfileQuietModeEnabled(context, user)
+			}
+
+			fun isProfileQuietModeEnabled(context: Context, user: UserHandle): Boolean {
+				if (CURRENT == user) return false
+				return try {
+					context.getSystemService<UserManager>()!!.isQuietModeEnabled(user)
+				} catch (e: RuntimeException) {
+					Log.w(TAG, "Error checking quiet mode for user ${user.toId()}", e)
+					false
+				}
+			}
+
+			fun isProfileAvailable(context: Context, user: UserHandle): Boolean =
+				isProfileRunning(context, user) && ! isProfileQuietModeEnabled(context, user)
 
 		@JvmStatic fun isSystemUser() = CURRENT_ID == 0
 		@JvmStatic fun isParentProfile() = CURRENT_ID == parentProfile.toId()
@@ -128,16 +141,24 @@ class Users : PseudoContentProvider() {
 				icon.also { if (SDK_INT >= Q) analytics().logAndReport(TAG, "Error getting user badged icon", e) }}
 
 		/** @return Whether the request is successful, false may indicate failure or timeout. */
-		@RequiresApi(P) suspend fun requestQuietModeDisabled(context: Context, profile: UserHandle,
-		                                                     timeout: Long = ACTIVATION_TIMEOUT) = coroutineScope {
-			val intent = waitForBroadcast(context, Intent.ACTION_MANAGED_PROFILE_AVAILABLE, timeout) {
-				launch {
-					Log.i(TAG, "Activating PrismSpace ${profile.toId()}...")
-					val activating = HomeRole.runWithHomeRole(context) {
-						val um = context.getSystemService<UserManager>()!!
-						um.requestQuietModeEnabled(false, profile) }
-					if (! activating) it.resume(null)
-					Log.i(TAG, "Waiting for PrismSpace ${profile.toId()} to be ready...") }}
+			@RequiresApi(P) suspend fun requestQuietModeDisabled(context: Context, profile: UserHandle,
+			                                                     timeout: Long = ACTIVATION_TIMEOUT) = coroutineScope {
+				val um = context.getSystemService<UserManager>()!!
+				if (isProfileAvailable(context, profile) && um.isUserUnlocked(profile)) {
+					Log.i(TAG, "PrismSpace ${profile.toId()} is already available")
+					return@coroutineScope true
+				}
+				val intent = waitForBroadcast(context, Intent.ACTION_MANAGED_PROFILE_AVAILABLE, timeout) {
+					launch {
+						Log.i(TAG, "Activating PrismSpace ${profile.toId()}...")
+						val activating = runCatching {
+							HomeRole.runWithHomeRole(context) {
+								um.requestQuietModeEnabled(false, profile) }
+						}.onFailure { e ->
+							Log.e(TAG, "Failed to request quiet mode disabled for user ${profile.toId()}", e)
+						}.getOrDefault(false)
+						if (! activating) it.resume(null)
+						Log.i(TAG, "Waiting for PrismSpace ${profile.toId()} to be ready...") }}
 			val user = intent?.getParcelableExtra<UserHandle>(Intent.EXTRA_USER)
 			Log.i(TAG, "PrismSpace ${user?.toId()} is ready")
 			return@coroutineScope user != null

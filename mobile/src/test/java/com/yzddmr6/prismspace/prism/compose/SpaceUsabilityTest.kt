@@ -9,11 +9,20 @@ class SpaceUsabilityTest {
     @Test fun `not provisioned wins over running and unlocked inputs`() {
         assertEquals(SpaceUsability.NotProvisioned, spaceUsability(false, false, false))
         assertEquals(SpaceUsability.NotProvisioned, spaceUsability(false, true, true))
+        assertEquals(SpaceUsability.NotProvisioned, spaceUsability(false, true, true, bridgeReady = false))
     }
 
     @Test fun `provisioned but not running is suspended`() {
         assertEquals(SpaceUsability.Suspended, spaceUsability(true, false, false))
         assertEquals(SpaceUsability.Suspended, spaceUsability(true, false, true))
+        assertEquals(SpaceUsability.Suspended, spaceUsability(true, false, true, bridgeReady = false))
+    }
+
+    @Test fun `quiet mode is suspended even when the user is still running`() {
+        assertEquals(
+            SpaceUsability.Suspended,
+            spaceUsability(provisioned = true, running = true, unlocked = true, quietMode = true),
+        )
     }
 
     @Test fun `running but CE locked needs unlock`() {
@@ -22,5 +31,26 @@ class SpaceUsabilityTest {
 
     @Test fun `running and unlocked is usable`() {
         assertEquals(SpaceUsability.Usable, spaceUsability(true, true, true))
+    }
+
+    @Test fun bridgeNotReadyOnlyAppliesAfterProfileBasicsAreReady() {
+        assertEquals(
+            SpaceUsability.BridgeNotReady,
+            spaceUsability(provisioned = true, running = true, unlocked = true, bridgeReady = false),
+        )
+    }
+
+    @Test fun lockedProfileTakesPrecedenceOverBridgeState() {
+        assertEquals(
+            SpaceUsability.LockedNeedsUnlock,
+            spaceUsability(provisioned = true, running = true, unlocked = false, bridgeReady = false),
+        )
+    }
+
+    @Test fun unknownBridgeStateIsNotReportedAsNotProvisioned() {
+        assertEquals(
+            SpaceUsability.Unknown,
+            spaceUsability(provisioned = true, running = true, unlocked = true, bridgeReady = null),
+        )
     }
 }

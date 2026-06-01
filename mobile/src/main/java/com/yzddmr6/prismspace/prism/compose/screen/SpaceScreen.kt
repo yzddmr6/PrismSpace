@@ -955,6 +955,10 @@ private fun EmptyPlaceholder(
                         dualUsability == SpaceUsability.LockedNeedsUnlock -> stringResource(R.string.lz_space_empty_dual_locked)
                     segment == SpaceSegment.Dual &&
                         dualUsability == SpaceUsability.Suspended -> stringResource(R.string.lz_space_empty_dual_suspended)
+                    segment == SpaceSegment.Dual &&
+                        dualUsability == SpaceUsability.BridgeNotReady -> stringResource(R.string.lz_space_empty_dual_bridge)
+                    segment == SpaceSegment.Dual &&
+                        dualUsability == SpaceUsability.Unknown -> stringResource(R.string.lz_space_empty_dual_unknown)
                     segment == SpaceSegment.Dual -> stringResource(R.string.lz_space_empty_dual_none)
                     else -> stringResource(R.string.lz_space_empty_none)
                 },
@@ -969,6 +973,10 @@ private fun EmptyPlaceholder(
                         dualUsability == SpaceUsability.LockedNeedsUnlock -> stringResource(R.string.lz_space_empty_dual_locked_hint)
                     segment == SpaceSegment.Dual &&
                         dualUsability == SpaceUsability.Suspended -> stringResource(R.string.lz_space_empty_dual_suspended_hint)
+                    segment == SpaceSegment.Dual &&
+                        dualUsability == SpaceUsability.BridgeNotReady -> stringResource(R.string.lz_space_empty_dual_bridge_hint)
+                    segment == SpaceSegment.Dual &&
+                        dualUsability == SpaceUsability.Unknown -> stringResource(R.string.lz_space_empty_dual_unknown_hint)
                     segment == SpaceSegment.Dual -> stringResource(R.string.lz_space_empty_dual_none_hint)
                     else -> stringResource(R.string.lz_space_empty_none_hint)
                 },

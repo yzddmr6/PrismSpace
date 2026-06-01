@@ -46,6 +46,9 @@ import com.yzddmr6.prismspace.data.helper.user
 import com.yzddmr6.prismspace.data.helper.userId
 import com.yzddmr6.prismspace.engine.PrismManager
 import com.yzddmr6.prismspace.mobile.R
+import com.yzddmr6.prismspace.prism.service.ProfileBridgeResult
+import com.yzddmr6.prismspace.prism.service.profileBridgeFailureMessage
+import com.yzddmr6.prismspace.prism.service.runProfileBridgeOperation
 import com.yzddmr6.prismspace.settings.PrismSettings
 import com.yzddmr6.prismspace.shuttle.Shuttle
 import com.yzddmr6.prismspace.util.DevicePolicies
@@ -263,13 +266,26 @@ object PrismAppShortcut {
 						false ->
 							Toasts.showLong(context, R.string.prompt_activate_space_first) }
 					activity.finish() }}
-			}
+				}
 
-			private fun shuttleAndLaunch(context: Context, pkg: String, intent: Intent?, profile: UserHandle, frozen: Boolean) {
-				Shuttle(context, to = profile).launch {
-					if (frozen) PrismManager.ensureAppFreeToLaunch(this, pkg)
-					launch(this, pkg, intent) }
-			}
+				private fun shuttleAndLaunch(context: Context, pkg: String, intent: Intent?, profile: UserHandle, frozen: Boolean) {
+					when (val result = runProfileBridgeOperation(context, TAG, "shortcut launch pkg=$pkg", target = profile) {
+						if (frozen) PrismManager.ensureAppFreeToLaunch(this, pkg)
+						launch(this, pkg, intent)
+					}) {
+						is ProfileBridgeResult.Value -> {
+							if (result.value != true) Toast.makeText(
+								context,
+								context.getString(R.string.toast_app_launch_failure, Apps.of(context).getAppName(pkg)),
+								LENGTH_LONG,
+							).show()
+						}
+						else -> Toasts.showLong(
+							context,
+							profileBridgeFailureMessage(context, result, context.getString(R.string.prompt_space_not_ready)),
+						)
+					}
+				}
 
 			private fun launch(context: Context, pkg: String, intent: Intent?): Boolean {
 				if (intent == null) return PrismManager.launchApp(context, pkg, Users.current()) is com.yzddmr6.prismspace.engine.LaunchResult.Ok

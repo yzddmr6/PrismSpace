@@ -36,6 +36,8 @@
     <string name="lz_setvm_repair_failed">修复失败: %1$s</string>
     <string name="lz_setvm_profile_activation_failed">Android 未能恢复工作资料</string>
     <string name="lz_setvm_space_already_ready">双开空间已正常，无需修复</string>
+    <string name="lz_setvm_bridge_repairing">正在重新连接双开空间…</string>
+    <string name="lz_setvm_bridge_repair_opened_profile">已打开双开空间，请在完成重连后返回棱镜空间重试。</string>
 
     <!-- SettingsViewModel: diagnostic report export -->
     <string name="lz_setvm_report_subject">PrismSpace 诊断报告</string>

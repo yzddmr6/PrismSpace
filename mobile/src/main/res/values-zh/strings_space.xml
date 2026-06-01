@@ -47,11 +47,15 @@
     <string name="lz_space_empty_no_match">没有匹配的应用</string>
     <string name="lz_space_empty_dual_locked">双开空间已锁定</string>
     <string name="lz_space_empty_dual_suspended">双开空间已暂停</string>
+    <string name="lz_space_empty_dual_bridge">双开空间需要重新连接</string>
+    <string name="lz_space_empty_dual_unknown">双开空间需要修复</string>
     <string name="lz_space_empty_dual_none">还没有双开应用</string>
     <string name="lz_space_empty_none">没有可显示的应用</string>
     <string name="lz_space_empty_no_match_hint">尝试其他搜索词</string>
     <string name="lz_space_empty_dual_locked_hint">请先解锁双开空间（锁屏密码）后再查看分身</string>
     <string name="lz_space_empty_dual_suspended_hint">在设置中恢复双开空间</string>
+    <string name="lz_space_empty_dual_bridge_hint">请到设置中修复双开空间连接</string>
+    <string name="lz_space_empty_dual_unknown_hint">请到设置中修复双开空间</string>
     <string name="lz_space_empty_dual_none_hint">到「主空间」点按应用，克隆到双开空间</string>
     <string name="lz_space_empty_none_hint">调整筛选或搜索条件</string>
     <string name="lz_space_new_space">＋新建空间</string>

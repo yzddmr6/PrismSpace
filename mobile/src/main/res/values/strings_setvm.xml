@@ -36,6 +36,8 @@
     <string name="lz_setvm_repair_failed">Repair failed: %1$s</string>
     <string name="lz_setvm_profile_activation_failed">Android did not resume the work profile</string>
     <string name="lz_setvm_space_already_ready">Dual space is already ready</string>
+    <string name="lz_setvm_bridge_repairing">Reconnecting dual space…</string>
+    <string name="lz_setvm_bridge_repair_opened_profile">Opened the dual space. Return to PrismSpace and retry after it reconnects.</string>
 
     <!-- SettingsViewModel: diagnostic report export -->
     <string name="lz_setvm_report_subject">PrismSpace diagnostic report</string>

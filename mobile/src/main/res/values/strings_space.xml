@@ -47,11 +47,15 @@
     <string name="lz_space_empty_no_match">No matching apps</string>
     <string name="lz_space_empty_dual_locked">Dual space is locked</string>
     <string name="lz_space_empty_dual_suspended">Dual space is paused</string>
+    <string name="lz_space_empty_dual_bridge">Dual space needs to reconnect</string>
+    <string name="lz_space_empty_dual_unknown">Dual space needs repair</string>
     <string name="lz_space_empty_dual_none">No cloned apps yet</string>
     <string name="lz_space_empty_none">No apps to display</string>
     <string name="lz_space_empty_no_match_hint">Try a different search term</string>
     <string name="lz_space_empty_dual_locked_hint">Unlock the dual space (lock-screen password) first, then view the clones</string>
     <string name="lz_space_empty_dual_suspended_hint">Resume the dual space in Settings</string>
+    <string name="lz_space_empty_dual_bridge_hint">Open Settings and repair the dual-space connection</string>
+    <string name="lz_space_empty_dual_unknown_hint">Open Settings and repair the dual space</string>
     <string name="lz_space_empty_dual_none_hint">Go to “Main space”, tap an app, and clone it to the dual space</string>
     <string name="lz_space_empty_none_hint">Adjust the filter or search criteria</string>
     <string name="lz_space_new_space">＋ New space</string>

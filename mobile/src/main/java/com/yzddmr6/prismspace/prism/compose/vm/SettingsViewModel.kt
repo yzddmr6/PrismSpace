@@ -26,9 +26,12 @@ import com.yzddmr6.prismspace.prism.model.PrismSettingsModeState
 import com.yzddmr6.prismspace.prism.model.PrismShizukuAdbStatus
 import com.yzddmr6.prismspace.prism.model.SettingsActionPlanner
 import com.yzddmr6.prismspace.prism.service.CapabilityService
+import com.yzddmr6.prismspace.prism.service.ProfileEntryLauncher
 import com.yzddmr6.prismspace.setup.PrismSetup
 import com.yzddmr6.prismspace.setup.SetupFlow
 import com.yzddmr6.prismspace.shuttle.Shuttle
+import com.yzddmr6.prismspace.shuttle.ShuttleOutcome
+import com.yzddmr6.prismspace.shuttle.ShuttleProvider
 import com.yzddmr6.prismspace.util.PrismLocale
 import com.yzddmr6.prismspace.util.Users
 import com.yzddmr6.prismspace.util.Users.Companion.toId
@@ -427,6 +430,10 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
                     com.yzddmr6.prismspace.prism.compose.space.SpaceUsability.Suspended,
                     com.yzddmr6.prismspace.prism.compose.space.SpaceUsability.LockedNeedsUnlock ->
                         RepairSpaceOutcome.Activate(profile)
+                    com.yzddmr6.prismspace.prism.compose.space.SpaceUsability.BridgeNotReady ->
+                        RepairSpaceOutcome.RepairBridge(profile)
+                    com.yzddmr6.prismspace.prism.compose.space.SpaceUsability.Unknown ->
+                        RepairSpaceOutcome.RepairBridge(profile)
                     com.yzddmr6.prismspace.prism.compose.space.SpaceUsability.Usable ->
                         RepairSpaceOutcome.AlreadyReady
                 }
@@ -436,15 +443,27 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
                     setFeedback(str(R.string.lz_setvm_opening_setup), isError = false)
                     SetupFlow.open(context)
                 }
-                is RepairSpaceOutcome.Activate -> {
-                    setFeedback(str(R.string.lz_setvm_repairing), isError = false)
-                    val ok = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                        Users.requestQuietModeDisabled(context, outcome.profile)
-                    } else {
-                        false
-                    }
+				is RepairSpaceOutcome.Activate -> {
+					setFeedback(str(R.string.lz_setvm_repairing), isError = false)
+					val ok = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+						runCatching { Users.requestQuietModeDisabled(context, outcome.profile) }
+							.onFailure { DiagnosticLog.e(TAG, "profile activation failed", it) }
+							.getOrDefault(false)
+					} else {
+						false
+					}
                     if (ok) {
                         setFeedback(str(R.string.lz_setvm_space_resumed), isError = false)
+                    } else {
+                        setFeedback(str(R.string.lz_setvm_repair_failed, str(R.string.lz_setvm_profile_activation_failed)), isError = true)
+                    }
+                    refreshCapabilities()
+                }
+                is RepairSpaceOutcome.RepairBridge -> {
+                    setFeedback(str(R.string.lz_setvm_bridge_repairing), isError = false)
+                    val opened = ProfileEntryLauncher.start(context, outcome.profile)
+                    if (opened) {
+                        setFeedback(str(R.string.lz_setvm_bridge_repair_opened_profile), isError = false)
                     } else {
                         setFeedback(str(R.string.lz_setvm_repair_failed, str(R.string.lz_setvm_profile_activation_failed)), isError = true)
                     }
@@ -494,10 +513,10 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val (fileName, uri) = withContext(Dispatchers.IO) {
                     DiagnosticLog.i(TAG, "diagnostic export start")
-                    val profileSection = collectProfileDiagnostics(context.applicationContext)
+                    val profileSections = collectProfileDiagnostics(context.applicationContext)
                     val file = DiagnosticLog.createExportFile(
                         context,
-                        extraSections = listOfNotNull(profileSection),
+                        extraSections = profileSections,
                         includeLogcat = true,
                     )
                     file.name to DiagnosticLog.shareUri(context, file)
@@ -617,31 +636,47 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     private sealed interface RepairSpaceOutcome {
         data object StartSetup : RepairSpaceOutcome
         data class Activate(val profile: android.os.UserHandle) : RepairSpaceOutcome
+        data class RepairBridge(val profile: android.os.UserHandle) : RepairSpaceOutcome
         data object AlreadyReady : RepairSpaceOutcome
     }
 
-    private fun collectProfileDiagnostics(context: Context): DiagnosticSection? {
-        val profile = Users.profile ?: return DiagnosticSection(
+    private fun collectProfileDiagnostics(context: Context): List<DiagnosticSection> {
+        val profile = Users.profile ?: return listOf(DiagnosticSection(
             title = "Dual-space diagnostic snapshot",
             body = "No managed profile is currently known to the main space.",
+        ))
+        val health = ShuttleProvider.health(context, profile)
+        val healthSection = DiagnosticSection(
+            title = "Dual-space shuttle health user=${profile.toId()}",
+            body = health.diagnosticLine(),
         )
         return try {
-            val descriptor = Shuttle(context, to = profile).invokeNoThrowsWithin(timeoutMs = 4_500L) {
+            val descriptorOutcome = Shuttle(context, to = profile).invokeOutcomeWithin(timeoutMs = 4_500L) {
                 DiagnosticLog.openSnapshotDescriptor(this)
             }
-            val body = descriptor?.use { pfd ->
-                FileInputStream(pfd.fileDescriptor).use { it.readBytes().toString(Charsets.UTF_8) }
-            } ?: "Dual-space diagnostic snapshot unavailable: shuttle is not ready."
-            DiagnosticSection(
+            val body = when (descriptorOutcome) {
+                is ShuttleOutcome.Value -> descriptorOutcome.value?.use { pfd ->
+                    FileInputStream(pfd.fileDescriptor).use { it.readBytes().toString(Charsets.UTF_8) }
+                } ?: "Dual-space diagnostic snapshot returned no descriptor."
+                is ShuttleOutcome.NotReady ->
+                    "Dual-space diagnostic snapshot unavailable: shuttle is not ready (${descriptorOutcome.cause})."
+                ShuttleOutcome.TimedOut ->
+                    "Dual-space diagnostic snapshot unavailable: shuttle timed out."
+                is ShuttleOutcome.Failed ->
+                    "Failed to collect dual-space diagnostics: ${descriptorOutcome.error.message ?: descriptorOutcome.error.javaClass.simpleName}"
+                is ShuttleOutcome.Skipped ->
+                    "Dual-space diagnostic snapshot skipped: ${descriptorOutcome.reason}"
+            }
+            listOf(healthSection, DiagnosticSection(
                 title = "Dual-space diagnostic snapshot user=${profile.toId()}",
                 body = body,
-            )
+            ))
         } catch (e: Exception) {
             DiagnosticLog.e(TAG, "dual-space diagnostic collection failed", e)
-            DiagnosticSection(
+            listOf(healthSection, DiagnosticSection(
                 title = "Dual-space diagnostic snapshot user=${profile.toId()}",
                 body = "Failed to collect dual-space diagnostics: ${e.message ?: e.javaClass.simpleName}",
-            )
+            ))
         }
     }
 

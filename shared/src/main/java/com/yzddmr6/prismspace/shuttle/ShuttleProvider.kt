@@ -27,11 +27,14 @@ class ShuttleProvider: ContentProvider() {
 		fun <R> call(context: Context, profile: UserHandle, function: ContextFun<R>): ShuttleResult<R> {
 			val bundle = Bundle(1).apply { putParcelable(null, Closure(function)) }
 			val uri = buildCrossProfileUri(profile.toId())
-			try { return ShuttleResult(context.contentResolver.call(uri, function.javaClass.name, null, bundle)) }
+			try { return ShuttleResult.value(context.contentResolver.call(uri, function.javaClass.name, null, bundle)) }
 			catch (e: RuntimeException) { // "SecurityException" or "IllegalArgumentException: Unknown authority 0@..." if shuttle is not ready
-				if (e is SecurityException || e is IllegalArgumentException) {
-					if (isReady(context, profile)) analytics().logAndReport(TAG, "Error shuttling $function", e)
-					@Suppress("UNCHECKED_CAST") return ShuttleResult.NOT_READY as ShuttleResult<R> }
+				val permissionGranted = isReady(context, profile)
+				val cause = classifyShuttleNotReadyCause(e, permissionGranted)
+				if (cause != null) {
+					Log.w(TAG, "Shuttle call not ready target=${profile.toId()} cause=$cause permissionGranted=$permissionGranted method=${function.javaClass.name}")
+					if (permissionGranted) analytics().logAndReport(TAG, "Error shuttling $function", e)
+					return ShuttleResult.notReady(cause) }
 				throw e }
 		}
 
@@ -41,6 +44,27 @@ class ShuttleProvider: ContentProvider() {
 
 		private fun Context.isPermissionGranted(uri: Uri, uid: Int = Process.myUid()) =
 				checkUriPermission(uri, 0, uid, Intent.FLAG_GRANT_WRITE_URI_PERMISSION) == PERMISSION_GRANTED
+
+		fun hasForwardGrant(context: Context, profile: UserHandle) = isReady(context, profile)
+		@OwnerUser fun hasBackwardGrant(context: Context, profile: UserHandle) = isBackwardReady(context, profile)
+
+			fun health(context: Context, profile: UserHandle, timeoutMs: Long = SHUTTLE_HEALTH_TIMEOUT_MS): ShuttleHealth {
+				val running = runCatching { Users.isProfileRunning(context, profile) }.getOrDefault(false)
+				val quietMode = runCatching { Users.isProfileQuietModeEnabled(context, profile) }.getOrDefault(false)
+				val unlocked = runCatching {
+					context.getSystemService(UserManager::class.java)?.isUserUnlocked(profile) == true
+				}.getOrDefault(false)
+				val forwardGrant = isReady(context, profile)
+				val backwardGrant = runCatching { isBackwardReady(context, profile) }.getOrDefault(false)
+				val ping = when {
+					quietMode -> ShuttleOutcome.Skipped("profile_quiet_mode")
+					!running -> ShuttleOutcome.Skipped("profile_not_running")
+					!unlocked -> ShuttleOutcome.Skipped("profile_locked")
+					!forwardGrant -> ShuttleOutcome.NotReady(ShuttleNotReadyCause.PermissionDenied)
+					else -> Shuttle(context, to = profile).invokeOutcomeWithin(timeoutMs) { true }
+				}
+				return ShuttleHealth(profile.toId(), running, quietMode, unlocked, forwardGrant, backwardGrant, ping)
+			}
 
 		fun initialize(context: Context) {
 			Log.v(TAG, "Initializing in profile ${Users.currentId()}...")
@@ -58,15 +82,22 @@ class ShuttleProvider: ContentProvider() {
 			initializeInPrism(context)
 		}
 
+		fun initializeFromProfileForeground(context: Context) {
+			if (Users.isParentProfile()) return initialize(context)
+			if (! DevicePolicies(context).isProfileOwner) return
+			Log.i(TAG, "Shuttle foreground initialization in profile ${Users.currentId()}")
+			initializeInPrism(context, force = true)
+		}
+
 		private fun initializeBackwardShuttle(context: Context, profile: UserHandle) {
 			Shuttle(context, to = profile).launchNoThrows { initializeInPrism(this) }
 		}
 
-		private fun initializeInPrism(context: Context) {
-			if (context.isPermissionGranted(Uri.parse(CONTENT_URI), uid = UserHandles.getAppId(Process.myUid())))
+		private fun initializeInPrism(context: Context, force: Boolean = false) {
+			if (!force && context.isPermissionGranted(Uri.parse(CONTENT_URI), uid = UserHandles.getAppId(Process.myUid())))
 				return Unit.also { Log.i(TAG, "Shuttle in ${Users.current().toId()}: ready") }
 
-			Log.i(TAG, "Shuttle in profile ${Users.current().toId()}: establishing...")
+			Log.i(TAG, "Shuttle in profile ${Users.current().toId()}: establishing... force=$force")
 			ShuttleCarrierActivity.sendToParentProfileQuietlyIfPossible(context) {
 				addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
 				clipData = ClipData(TAG, emptyArray(), ClipData.Item(buildCrossProfileUri())) }
@@ -86,6 +117,7 @@ class ShuttleProvider: ContentProvider() {
 
 		private const val AUTHORITY = "com.yzddmr6.prismspace.shuttle"
 		const val CONTENT_URI = "$SCHEME_CONTENT://$AUTHORITY"
+		private const val SHUTTLE_HEALTH_TIMEOUT_MS = 1_500L
 	}
 
 	override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
@@ -119,15 +151,19 @@ class ShuttleProvider: ContentProvider() {
 	}
 }
 
-@JvmInline value class ShuttleResult<R>(private val bundle: Bundle?) {
+class ShuttleResult<R> private constructor(private val bundle: Bundle?, val notReadyCause: ShuttleNotReadyCause?) {
 
-	companion object { internal val NOT_READY = ShuttleResult<Any>(Bundle()) }
+	companion object {
+		fun <R> value(bundle: Bundle?) = ShuttleResult<R>(bundle, null)
+		fun <R> notReady(cause: ShuttleNotReadyCause) = ShuttleResult<R>(null, cause)
+	}
 
-	fun isNotReady() = bundle === NOT_READY.bundle
+	fun isNotReady() = notReadyCause != null
 	@Suppress("UNCHECKED_CAST") fun get(): R = bundle?.get(null) as R
-	override fun toString() = when(this) {
-		NOT_READY -> "ShuttleResult{NOT_READY}"
-		else -> "ShuttleResult{" + bundle.toString() + "}" }
+	@Suppress("UNCHECKED_CAST") fun getOrNull(): R? = bundle?.get(null) as R?
+	override fun toString() =
+		if (isNotReady()) "ShuttleResult{NOT_READY cause=$notReadyCause}"
+		else "ShuttleResult{" + bundle.toString() + "}"
 }
 
 //private fun Bundle?.toStr() = this?.toString()?.substring(6) ?: "null"

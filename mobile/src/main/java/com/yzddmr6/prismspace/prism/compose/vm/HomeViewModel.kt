@@ -194,21 +194,26 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         val profileOwner = runCatching {
             profile?.let { Users.isProfileManagedByPrism(context, it) } == true
         }.getOrDefault(false)
-        val running = runCatching {
-            profile?.let { Users.isProfileRunning(context, it) } == true
-        }.getOrDefault(false)
+		val running = runCatching {
+			profile?.let { Users.isProfileRunning(context, it) } == true
+		}.getOrDefault(false)
+		val quietMode = runCatching {
+			profile?.let { Users.isProfileQuietModeEnabled(context, it) } == true
+		}.getOrDefault(false)
 
-        val health = when (spaceRepo.dualSpace()?.let { spaceRepo.usabilityOf(it) } ?: SpaceUsability.NotProvisioned) {
+		val health = when (spaceRepo.dualSpace()?.let { spaceRepo.usabilityOf(it) } ?: SpaceUsability.NotProvisioned) {
             SpaceUsability.NotProvisioned    -> SpaceHealth.NotCreated
             SpaceUsability.Suspended         -> SpaceHealth.Suspended
             SpaceUsability.LockedNeedsUnlock -> SpaceHealth.Locked
+            SpaceUsability.BridgeNotReady    -> SpaceHealth.NeedsRepair
+            SpaceUsability.Unknown           -> SpaceHealth.NeedsRepair
             SpaceUsability.Usable            -> SpaceHealth.Normal
         }
         DiagnosticLog.d(
-            TAG,
-            "home state profile=${profile?.toId() ?: Users.NULL_ID} " +
-                "profileOwner=$profileOwner running=$running health=$health",
-        )
+			TAG,
+			"home state profile=${profile?.toId() ?: Users.NULL_ID} " +
+				"profileOwner=$profileOwner running=$running quietMode=$quietMode health=$health",
+		)
 
         // Counts — sourced via SpaceRepository (single source of truth; was: direct provider/Users)
         val mainCount = runCatching {
@@ -234,11 +239,11 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         } else 0
 
         // Profile Owner status label.
-        val profileOwnerLabel = when {
-            !profileOwner -> resolve(R.string.lz_home_profile_not_created)
-            !running -> resolve(R.string.lz_home_profile_suspended)
-            else -> resolve(R.string.lz_home_profile_ready)
-        }
+		val profileOwnerLabel = when {
+			!profileOwner -> resolve(R.string.lz_home_profile_not_created)
+			!running || quietMode -> resolve(R.string.lz_home_profile_suspended)
+			else -> resolve(R.string.lz_home_profile_ready)
+		}
 
         // Configured mode comes from the same source as Settings.
         val capabilityText = resolve(prismModeLabelRes(capRepo.selectedMode.value))

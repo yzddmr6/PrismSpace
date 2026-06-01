@@ -54,6 +54,31 @@ class Shuttle(val context: Context, val to: UserHandle) {
 	inline fun <A, R> invokeNoThrowsWithin(timeoutMs: Long = DEFAULT_SYNC_TIMEOUT_MS,
 			with: A, crossinline function: Context.(A) -> R): R? =
 			invokeNoThrowsWithin(timeoutMs) { this.function(with) }
+
+	fun <R> invokeOutcome(function: Context.() -> R): ShuttleOutcome<R> =
+			if (to == Users.current()) try { ShuttleOutcome.Value(context.function()) }
+			catch (e: Throwable) { ShuttleOutcome.Failed(e) }
+			else shuttleOutcome(function)
+
+	inline fun <A, R> invokeOutcome(with: A, crossinline function: Context.(A) -> R): ShuttleOutcome<R> =
+			invokeOutcome { this.function(with) }
+
+	fun <R> invokeOutcomeWithin(timeoutMs: Long = DEFAULT_SYNC_TIMEOUT_MS,
+			function: Context.() -> R): ShuttleOutcome<R> =
+			if (to == Users.current()) invokeOutcome(function)
+			else runBoundedOutcome(timeoutMs) { shuttleOutcome(function) }
+
+	inline fun <A, R> invokeOutcomeWithin(timeoutMs: Long = DEFAULT_SYNC_TIMEOUT_MS,
+			with: A, crossinline function: Context.(A) -> R): ShuttleOutcome<R> =
+			invokeOutcomeWithin(timeoutMs) { this.function(with) }
+
+	private fun <R> shuttleOutcome(function: Context.() -> R): ShuttleOutcome<R> = try {
+		val result = ShuttleProvider.call(context, to, function)
+		if (result.isNotReady()) ShuttleOutcome.NotReady(result.notReadyCause!!)
+		else ShuttleOutcome.Value(result.getOrNull())
+	} catch (e: Throwable) {
+		ShuttleOutcome.Failed(e)
+	}
 }
 
 /** Default bound for one synchronous cross-profile Shuttle IPC.

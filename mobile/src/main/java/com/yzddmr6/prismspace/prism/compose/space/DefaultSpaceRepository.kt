@@ -7,6 +7,7 @@ import com.yzddmr6.prismspace.common.app.AppListProvider
 import com.yzddmr6.prismspace.data.PrismAppInfo
 import com.yzddmr6.prismspace.data.PrismAppListProvider
 import com.yzddmr6.prismspace.mobile.R
+import com.yzddmr6.prismspace.shuttle.ShuttleProvider
 import com.yzddmr6.prismspace.util.PrismLocale
 import com.yzddmr6.prismspace.util.Users
 import com.yzddmr6.prismspace.util.Users.Companion.toId
@@ -38,19 +39,25 @@ class DefaultSpaceRepository(private val appContext: Context) : SpaceRepository 
     override fun usabilityOf(space: PrismSpace): SpaceUsability {
         refreshUsersSnapshot()
         if (space.kind == PrismSpaceKind.Main) return SpaceUsability.Usable
-        return try {
-            val handle = Users.getProfilesManagedByPrism()
-                .firstOrNull { it.toId() == space.userId }
-                ?: return SpaceUsability.NotProvisioned
-            val provisioned = Users.isProfileManagedByPrism(appContext, handle)
-            val running = Users.isProfileRunning(appContext, handle)
-            val unlocked = appContext.getSystemService(android.os.UserManager::class.java)
-                ?.isUserUnlocked(handle) == true
-            spaceUsability(provisioned, running, unlocked)
-        } catch (e: SecurityException) {
-            SpaceUsability.NotProvisioned
+        val handle = Users.getProfilesManagedByPrism()
+            .firstOrNull { it.toId() == space.userId }
+            ?: return SpaceUsability.NotProvisioned
+		return try {
+			val provisioned = Users.isProfileManagedByPrism(appContext, handle)
+			val running = Users.isProfileRunning(appContext, handle)
+			val quietMode = Users.isProfileQuietModeEnabled(appContext, handle)
+			val unlocked = appContext.getSystemService(android.os.UserManager::class.java)
+				?.isUserUnlocked(handle) == true
+			val base = spaceUsability(provisioned, running, unlocked, quietMode = quietMode)
+			if (base != SpaceUsability.Usable) return base
+			val bridgeReady = ShuttleProvider.health(appContext, handle).available
+			spaceUsability(provisioned, running, unlocked, bridgeReady, quietMode)
+		} catch (e: SecurityException) {
+            DiagnosticLog.w(TAG, "dual-space usability unavailable user=${handle.toId()}", e)
+            SpaceUsability.Unknown
         } catch (e: RuntimeException) {
-            SpaceUsability.NotProvisioned
+            DiagnosticLog.w(TAG, "dual-space usability unavailable user=${handle.toId()}", e)
+            SpaceUsability.Unknown
         }
     }
 

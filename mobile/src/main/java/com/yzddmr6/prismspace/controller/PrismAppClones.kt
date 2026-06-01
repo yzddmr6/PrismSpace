@@ -49,7 +49,6 @@ import com.yzddmr6.prismspace.help.PrismHelp
 import com.yzddmr6.prismspace.mobile.R
 import com.yzddmr6.prismspace.model.interactive
 import com.yzddmr6.prismspace.prism.compose.space.SpaceRepositoryProvider
-import com.yzddmr6.prismspace.shuttle.Shuttle
 import com.yzddmr6.prismspace.ui.ModelBottomSheetFragment
 import com.yzddmr6.prismspace.util.Activities
 import com.yzddmr6.prismspace.util.*
@@ -63,8 +62,13 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import eu.chainfire.libsuperuser.Shell
 import com.yzddmr6.prismspace.prism.service.FileBridgeService
+import com.yzddmr6.prismspace.prism.service.FileTransferFailureReason
 import com.yzddmr6.prismspace.prism.service.InstallSourcePermissionHelper
+import com.yzddmr6.prismspace.prism.service.ProfileBridgeResult
+import com.yzddmr6.prismspace.prism.service.ProfileEntryLauncher
 import com.yzddmr6.prismspace.prism.service.TransferHistoryStore
+import com.yzddmr6.prismspace.prism.service.profileBridgeFailureMessage
+import com.yzddmr6.prismspace.prism.service.runProfileBridgeOperation
 import rikka.shizuku.Shizuku
 import rikka.shizuku.Shizuku.UserServiceArgs
 import rikka.shizuku.Shizuku.removeRequestPermissionResultListener
@@ -195,122 +199,197 @@ class PrismAppClones(val activity: FragmentActivity, val vm: AndroidViewModel, v
 		val route = cloneRoute(target.isParentProfile(), source.isSystem, mode,
 				{ isInstallerUsable() }, { Shizuku.checkSelfPermission() == PERMISSION_GRANTED }, { mode == MODE_ROOT })
 		DiagnosticLog.i(TAG, "cloneApp route pkg=$pkg targetUser=${target.toId()} route=$route")
-		when (route) {
-			CloneRoute.PARENT_INSTALLER -> @Suppress("DEPRECATION") // Only works in parent profile due to a bug in AOSP.
-				return activity.startActivityForResult(Intent(Intent.ACTION_INSTALL_PACKAGE, Uri.fromParts("package", pkg, null)), 1)   // startActivityForResult() is required on Android U+ due to a bug in AOSP.
+			when (route) {
+				CloneRoute.PARENT_INSTALLER -> {
+					@Suppress("DEPRECATION") // Only works in parent profile due to a bug in AOSP.
+					activity.startActivityForResult(Intent(Intent.ACTION_INSTALL_PACKAGE, Uri.fromParts("package", pkg, null)), 1)
+					return
+				}
 
 				CloneRoute.ROOT -> {
-				analytics().event("clone_root").with(Analytics.Param.ITEM_ID, pkg).send()
-				val ok = withContext(Dispatchers.IO) {
-					val out = Shell.SU.run("pm install-existing --user ${target.toId()} $pkg")
-					out != null && out.any { it.contains("installed for user", ignoreCase = true) } }
-				if (ok) {
-					PrismAppListProvider.getInstance(context).refreshPackage(pkg, target, true)
-					feedback(PrismLocale.wrap(context).getString(R.string.toast_successfully_cloned, source.label))
-				} else feedback(PrismLocale.wrap(context).getString(R.string.toast_clone_root_unavailable), isError = true)
-				return
-			}
+					analytics().event("clone_root").with(Analytics.Param.ITEM_ID, pkg).send()
+					val ok = withContext(Dispatchers.IO) {
+						val out = Shell.SU.run("pm install-existing --user ${target.toId()} $pkg")
+						out != null && out.any { it.contains("installed for user", ignoreCase = true) }
+					}
+					if (ok) {
+						PrismAppListProvider.getInstance(context).refreshPackage(pkg, target, true)
+						feedback(PrismLocale.wrap(context).getString(R.string.toast_successfully_cloned, source.label))
+					} else {
+						feedback(PrismLocale.wrap(context).getString(R.string.toast_clone_root_unavailable), isError = true)
+					}
+					return
+				}
 
+				CloneRoute.FILE_SYNC -> {
+					cloneViaFileSync(context, source)
+					return
+				}
 
-			CloneRoute.FILE_SYNC -> {   // 方法①: transfer the APK into the dual space + guide manual install.
-				cloneViaFileSync(context, source)
-				return
-			}
-
-			CloneRoute.SYSTEM_ENABLE -> {
-				analytics().event("clone_sys").with(Analytics.Param.ITEM_ID, pkg).send()
-
-				val enabled = Shuttle(context, to = target).invoke(with = pkg) { DevicePolicies(this).enableSystemApp(it) }
-
-				if (enabled) feedback(PrismLocale.wrap(context).getString(R.string.toast_successfully_cloned, source.label))
-				else feedback(PrismLocale.wrap(context).getString(R.string.toast_cannot_clone, source.label), isError = true)
-				return
-			}
-
-			CloneRoute.SHIZUKU -> {
-				val component = ComponentName(context, PrivilegedRemoteWorker::class.java)
-				val shizukuServiceTag = "clone-$pkg-${SystemClock.uptimeMillis()}"
-				val args = UserServiceArgs(component).daemon(false).processNameSuffix(pkg).tag(shizukuServiceTag)
-					// Guard the bind with a single-shot latch so exactly one outcome is reported,
-					// run the blocking transact off the main thread, refresh the list on real
-					// success, and time out a stuck bind.
-				val done = java.util.concurrent.atomic.AtomicBoolean(false)
-				val main = Handler(Looper.getMainLooper())
-				fun fail() = feedback(PrismLocale.wrap(context).getString(R.string.lz_app_clone_shizuku_failed), isError = true)
-				lateinit var conn: ServiceConnection
-				conn = object: ServiceConnection {
-					override fun onServiceConnected(name: ComponentName, service: IBinder) {
-						DiagnosticLog.i(TAG, "Shizuku service connected pkg=$pkg targetUser=${target.toId()} name=$name")
-						if (! done.compareAndSet(false, true)) return
-						main.removeCallbacksAndMessages(null)
-						vm.viewModelScope.launch {
-							val result = withContext(Dispatchers.IO) {
-								val data = Parcel.obtain().apply { writeString(pkg); writeInt(target.toId()) }
-								val reply = Parcel.obtain()
-								try { service.transact(IBinder.FIRST_CALL_TRANSACTION, data, reply, 0); reply.readInt() }
-								catch (e: RemoteException) { DiagnosticLog.e(TAG, "Shizuku transact failed for $pkg", e); -1 }
-								finally { data.recycle(); reply.recycle(); runCatching { Shizuku.unbindUserService(args, conn, true) } }
-							}
-							DiagnosticLog.i(TAG, "Shizuku clone result pkg=$pkg targetUser=${target.toId()} result=$result")
-							if (result == 1) {
-								PrismAppListProvider.getInstance(context).refreshPackage(pkg, target, true)
-								feedback(PrismLocale.wrap(context).getString(R.string.toast_successfully_cloned, source.label))
-							} else fail()
+				CloneRoute.SYSTEM_ENABLE -> {
+					analytics().event("clone_sys").with(Analytics.Param.ITEM_ID, pkg).send()
+					val enabled = when (val result = runProfileBridgeOperation(
+						context,
+						TAG,
+						"enable system app pkg=$pkg",
+						target = target,
+					) { DevicePolicies(this).enableSystemApp(pkg) }) {
+						is ProfileBridgeResult.Value -> result.value == true
+						else -> {
+							feedback(
+								profileBridgeFailureMessage(context, result, PrismLocale.wrap(context).getString(R.string.toast_cannot_clone, source.label)),
+								isError = true,
+							)
+							return
 						}
 					}
-					override fun onServiceDisconnected(name: ComponentName?) {
-						DiagnosticLog.i(TAG, "Shizuku service disconnected before completion pkg=$pkg targetUser=${target.toId()} name=$name")
-						if (done.compareAndSet(false, true)) { main.removeCallbacksAndMessages(null); fail() }
-					}
+					if (enabled) feedback(PrismLocale.wrap(context).getString(R.string.toast_successfully_cloned, source.label))
+					else feedback(PrismLocale.wrap(context).getString(R.string.toast_cannot_clone, source.label), isError = true)
+					return
 				}
-				main.postDelayed({ if (done.compareAndSet(false, true)) { runCatching { Shizuku.unbindUserService(args, conn, true) }; fail() } }, 20_000)
-				try { DiagnosticLog.i(TAG, "Binding Shizuku service pkg=$pkg targetUser=${target.toId()}"); Shizuku.bindUserService(args, conn) }
-				catch (e: Throwable) { DiagnosticLog.e(TAG, "Shizuku bindUserService failed for $pkg", e); if (done.compareAndSet(false, true)) { main.removeCallbacksAndMessages(null); fail() } }
-				return
-			}
 
-		}
+				CloneRoute.SHIZUKU -> {
+					val component = ComponentName(context, PrivilegedRemoteWorker::class.java)
+					val shizukuServiceTag = "clone-$pkg-${SystemClock.uptimeMillis()}"
+					val args = UserServiceArgs(component).daemon(false).processNameSuffix(pkg).tag(shizukuServiceTag)
+					val done = java.util.concurrent.atomic.AtomicBoolean(false)
+					val main = Handler(Looper.getMainLooper())
+					fun fail() = feedback(PrismLocale.wrap(context).getString(R.string.lz_app_clone_shizuku_failed), isError = true)
+					lateinit var conn: ServiceConnection
+					conn = object : ServiceConnection {
+						override fun onServiceConnected(name: ComponentName, service: IBinder) {
+							DiagnosticLog.i(TAG, "Shizuku service connected pkg=$pkg targetUser=${target.toId()} name=$name")
+							if (!done.compareAndSet(false, true)) return
+							main.removeCallbacksAndMessages(null)
+							vm.viewModelScope.launch {
+								val result = withContext(Dispatchers.IO) {
+									val data = Parcel.obtain().apply { writeString(pkg); writeInt(target.toId()) }
+									val reply = Parcel.obtain()
+									try {
+										service.transact(IBinder.FIRST_CALL_TRANSACTION, data, reply, 0)
+										reply.readInt()
+									} catch (e: RemoteException) {
+										DiagnosticLog.e(TAG, "Shizuku transact failed for $pkg", e)
+										-1
+									} finally {
+										data.recycle()
+										reply.recycle()
+										runCatching { Shizuku.unbindUserService(args, conn, true) }
+									}
+								}
+								DiagnosticLog.i(TAG, "Shizuku clone result pkg=$pkg targetUser=${target.toId()} result=$result")
+								if (result == 1) {
+									PrismAppListProvider.getInstance(context).refreshPackage(pkg, target, true)
+									feedback(PrismLocale.wrap(context).getString(R.string.toast_successfully_cloned, source.label))
+								} else {
+									fail()
+								}
+							}
+						}
+
+						override fun onServiceDisconnected(name: ComponentName?) {
+							DiagnosticLog.i(TAG, "Shizuku service disconnected before completion pkg=$pkg targetUser=${target.toId()} name=$name")
+							if (done.compareAndSet(false, true)) {
+								main.removeCallbacksAndMessages(null)
+								fail()
+							}
+						}
+					}
+					main.postDelayed({
+						if (done.compareAndSet(false, true)) {
+							runCatching { Shizuku.unbindUserService(args, conn, true) }
+							fail()
+						}
+					}, 20_000)
+					try {
+						DiagnosticLog.i(TAG, "Binding Shizuku service pkg=$pkg targetUser=${target.toId()}")
+						Shizuku.bindUserService(args, conn)
+					} catch (e: Throwable) {
+						DiagnosticLog.e(TAG, "Shizuku bindUserService failed for $pkg", e)
+						if (done.compareAndSet(false, true)) {
+							main.removeCallbacksAndMessages(null)
+							fail()
+						}
+					}
+					return
+				}
+			}
 	}
 
 
-	/**
+		/**
 		 * 普通模式 / no privilege: transfer the parent app's FULL APK set (base + ALL splits) into
-	 * the dual space's Download/PrismSpace, then guide the user to the profile-side foreground
-	 * system-installer path.
+		 * the dual space's Download/PrismSpace, then guide the user to the profile-side foreground
+		 * system-installer path.
 	 *
-	 * Why not auto-install here: a non-affiliated profile owner cannot call installExistingPackage
-	 * (AOSP SecurityException — needs affiliation, impossible without a device owner), and launching the
-	 * system App Installer for the profile from the main space is hard-blocked by Android 15 BAL
-	 * (background-activity-start: the cross-process PendingIntent's creator can't opt in from a
+		 * Why not auto-install here: a non-affiliated profile owner cannot call installExistingPackage
+		 * (AOSP SecurityException — needs affiliation, impossible without a device owner), and launching the
+		 * system App Installer for the profile from the main space is hard-blocked by Android 15 BAL
+		 * (background-activity-start: the cross-process PendingIntent's creator can't opt in from a
 		 * background profile process. So no-privilege install into a work
 		 * profile is an OS limitation, not an app bug. We therefore copy the complete app
 		 * and open a profile-side entry where the user can confirm installation
-	 * with Android's normal package installer.
-	 */
-	private fun cloneViaFileSync(context: Context, source: PrismAppInfo) {
-		analytics().event("clone_file_sync").with(Analytics.Param.ITEM_ID, pkg).send()
-		val appInfo = source as ApplicationInfo
+		 * with Android's normal package installer.
+		 */
+		private fun cloneViaFileSync(context: Context, source: PrismAppInfo) {
+			analytics().event("clone_file_sync").with(Analytics.Param.ITEM_ID, pkg).send()
+			val appInfo = source as ApplicationInfo
 			// base + every split so split apps install as a complete package set.
-		val apks = buildList {
-			appInfo.publicSourceDir?.takeIf { it.isNotEmpty() }?.let { add(java.io.File(it)) }
-			@Suppress("DEPRECATION") appInfo.splitSourceDirs?.forEach { add(java.io.File(it)) }
-		}
-		if (apks.isEmpty()) {
-			feedback(PrismLocale.wrap(context).getString(R.string.toast_cannot_clone, source.label), isError = true); return }
-		feedback(PrismLocale.wrap(context).getString(R.string.toast_clone_file_sync_transferring))
-		vm.viewModelScope.launch {
-			val result = withContext(Dispatchers.IO) {
-				FileBridgeService().importApksToProfile(context, apks, source.label.toString(), pkg) }
-			if (! result.success) { feedback(result.message, isError = true); return@launch }
+			val apks = buildList {
+				appInfo.publicSourceDir?.takeIf { it.isNotEmpty() }?.let { add(java.io.File(it)) }
+				@Suppress("DEPRECATION") appInfo.splitSourceDirs?.forEach { add(java.io.File(it)) }
+			}
+			if (apks.isEmpty()) {
+				feedback(PrismLocale.wrap(context).getString(R.string.toast_cannot_clone, source.label), isError = true)
+				return
+			}
+			feedback(PrismLocale.wrap(context).getString(R.string.toast_clone_file_sync_transferring))
+			vm.viewModelScope.launch {
+				val bridge = FileBridgeService()
+				suspend fun importOnce() = withContext(Dispatchers.IO) {
+					bridge.importApksToProfile(context, apks, source.label.toString(), pkg)
+				}
+
+				var result = importOnce()
+				if (!result.success && result.failureReason == FileTransferFailureReason.SpaceInactive) {
+					val profile = Users.profile
+					val activated = if (profile != null && SDK_INT >= P) {
+						feedback(PrismLocale.wrap(context).getString(R.string.prompt_activating_space), isError = false)
+						runCatching { Users.requestQuietModeDisabled(context, profile) }
+							.onFailure { DiagnosticLog.e(TAG, "file sync clone activation failed pkg=$pkg user=${profile.toId()}", it) }
+							.getOrDefault(false)
+					} else {
+						false
+					}
+					if (activated) {
+						DiagnosticLog.i(TAG, "file sync clone retry after activation pkg=$pkg")
+						result = importOnce()
+					}
+				}
+
+				if (!result.success) {
+					if (result.failureReason == FileTransferFailureReason.BridgeNotReady) {
+						val profile = Users.profile
+						if (profile != null && ProfileEntryLauncher.start(activity, profile)) {
+							feedback(PrismLocale.wrap(context).getString(R.string.fb_opened_profile_entry_retry), isError = false)
+						} else {
+							feedback(result.message, isError = true)
+						}
+					} else {
+						feedback(result.message, isError = true)
+					}
+					return@launch
+				}
+
 				// Record the outgoing half in the main-space history as "label-package";
 				// the dual half is recorded inside importApksToProfile.
-			TransferHistoryStore.record(
-				context, source.label.toString(),
-				PrismLocale.wrap(context).getString(R.string.lz_app_clone_to_dual_space), false, packageName = pkg)
-			Dialogs.buildAlert(activity, R.string.dialog_title_clone_file_sync, R.string.dialog_clone_file_sync_done)
-				.setPositiveButton(R.string.lz_app_filesync_open_install_entry) { _, _ ->
-					val openResult = FileBridgeService().openProfileInstallEntry(activity)
-					if (!openResult.success) feedback(openResult.message, isError = true)
+				TransferHistoryStore.record(
+					context, source.label.toString(),
+					PrismLocale.wrap(context).getString(R.string.lz_app_clone_to_dual_space), false, packageName = pkg)
+				Dialogs.buildAlert(activity, R.string.dialog_title_clone_file_sync, R.string.dialog_clone_file_sync_done)
+					.setPositiveButton(R.string.lz_app_filesync_open_install_entry) { _, _ ->
+						val openResult = FileBridgeService().openProfileInstallEntry(activity)
+						if (!openResult.success) feedback(openResult.message, isError = true)
 				}
 				.setNeutralButton(R.string.lz_app_filesync_allow_file_manager) { _, _ ->
 					val openResult = FileBridgeService().openProfileInstallSourceSettings(
@@ -320,12 +399,12 @@ class PrismAppClones(val activity: FragmentActivity, val vm: AndroidViewModel, v
 					if (!openResult.success) feedback(openResult.message, isError = true)
 				}
 				.setNegativeButton(android.R.string.ok, null).show()
+			}
 		}
-	}
 
 		// Clone results surface through the unified Snackbar bus hosted by MainActivity.
 		private fun feedback(message: String, isError: Boolean = false) =
-		AppFeedbackBus.emit(ActionFeedback(message, isError))
+			AppFeedbackBus.emit(ActionFeedback(message, isError))
 
 	private fun isInstallerUsable() = ModuleContext(context).forDeclaredPermission(REQUEST_INSTALL_PACKAGES) != null
 

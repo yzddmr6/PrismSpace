@@ -15,7 +15,6 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
-import android.content.pm.ResolveInfo;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.os.RemoteException;
@@ -161,10 +160,6 @@ public class Hacks {
 		List<UserInfo> getProfiles(int userHandle);
 		@RequiresPermission("android.permission.MANAGE_USERS") List<UserInfo> getUsers();
 		boolean removeUser(@UserIdInt int userHandle);
-	}
-
-	public interface PackageManagerHack extends Hack.Mirror<PackageManager> {
-		ComponentName getHomeActivities(List<ResolveInfo> outActivities);
 	}
 
 	static { if (BuildConfig.DEBUG || Log.isLoggable("PrismSpace", Log.DEBUG)) Hack.verifyAllMirrorsIn(Hacks.class); }

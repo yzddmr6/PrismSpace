@@ -7,7 +7,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.CrossProfileApps
-import android.content.pm.LauncherApps
 import android.content.pm.PackageManager.MATCH_DEFAULT_ONLY
 import android.content.pm.PackageManager.MATCH_DISABLED_COMPONENTS
 import android.os.Build
@@ -16,7 +15,6 @@ import com.yzddmr6.prismspace.analytics.DiagnosticLog
 import com.yzddmr6.prismspace.engine.CrossProfile
 import com.yzddmr6.prismspace.mobile.R
 import com.yzddmr6.prismspace.settings.PrismSettingsActivity
-import com.yzddmr6.prismspace.shuttle.Shuttle
 import com.yzddmr6.prismspace.util.DPM
 import com.yzddmr6.prismspace.util.DevicePolicies
 import com.yzddmr6.prismspace.util.PrismLocale
@@ -63,17 +61,34 @@ internal class ProfileDownloadsOpener {
         val context = activity.applicationContext
         return try {
             val profile = Users.profile
-                ?: return FileTransferResult(false, str(context, R.string.fb_need_create_space))
+                ?: return FileTransferResult(
+                    false,
+                    str(context, R.string.fb_need_create_space),
+                    failureReason = FileTransferFailureReason.SpaceMissing,
+                )
             if (preferProfileEntry && startProfileEntry(activity, profile)) {
                 return FileTransferResult(true, str(context, R.string.fb_opened_profile_entry))
             }
-            if (startDirectly(activity, profile, directIntent(context.packageName))) {
-                return FileTransferResult(true, str(context, R.string.fb_opened_downloads))
+            when (startDirectly(activity, profile, directIntent(context.packageName))) {
+                DirectOpenResult.Opened ->
+                    return FileTransferResult(true, str(context, R.string.fb_opened_downloads))
+                DirectOpenResult.PermissionRequestOpened ->
+                    return FileTransferResult(true, str(context, R.string.fb_opened_cross_profile_permission))
+                DirectOpenResult.Unavailable -> Unit
             }
-            val intent = prepareForwarderIntent(context, profile, forwarderIntent())
-            if (intent != null) {
-                activity.startActivity(intent)
-                return FileTransferResult(true, str(context, R.string.fb_opened_downloads))
+            when (val result = prepareForwarderIntent(context, forwarderIntent())) {
+                is ProfileBridgeResult.Value -> {
+                    val intent = result.value
+                    if (intent != null) {
+                        activity.startActivity(intent)
+                        return FileTransferResult(true, str(context, R.string.fb_opened_downloads))
+                    }
+                }
+                else -> return FileTransferResult(
+                    false,
+                    profileBridgeFailureMessage(context, result, str(context, R.string.fb_open_files_failed)),
+                    failureReason = result.failureReason(),
+                )
             }
             if (startProfileEntry(activity, profile)) {
                 return FileTransferResult(true, str(context, R.string.fb_opened_profile_entry))
@@ -86,20 +101,12 @@ internal class ProfileDownloadsOpener {
     }
 
     private fun startProfileEntry(activity: Activity, profile: UserHandle): Boolean =
-        runCatching {
-            val launcherApps = activity.getSystemService(LauncherApps::class.java) ?: return false
-            val component = ProfileDownloadsLauncher.profileEntryComponent(activity.packageName)
-            if (!launcherApps.isActivityEnabled(component, profile)) return false
-            launcherApps.startMainActivity(component, profile, null, null)
-            true
-        }.onFailure {
-            DiagnosticLog.w(TAG, "profile entry launch failed", it)
-        }.getOrDefault(false)
+        ProfileEntryLauncher.start(activity, profile)
 
-    private fun startDirectly(activity: Activity, profile: UserHandle, intent: Intent): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
+    private fun startDirectly(activity: Activity, profile: UserHandle, intent: Intent): DirectOpenResult {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return DirectOpenResult.Unavailable
         return runCatching {
-            val crossProfileApps = activity.getSystemService(CrossProfileApps::class.java) ?: return false
+            val crossProfileApps = activity.getSystemService(CrossProfileApps::class.java) ?: return DirectOpenResult.Unavailable
             val canInteract = crossProfileApps.canInteractAcrossProfiles()
             if (!canInteract) {
                 if (CrossProfileAccessPrompt.shouldPrompt(
@@ -109,25 +116,27 @@ internal class ProfileDownloadsOpener {
                     )
                 ) {
                     activity.startActivity(crossProfileApps.createRequestInteractAcrossProfilesIntent())
-                    return true
+                    return DirectOpenResult.PermissionRequestOpened
                 }
-                return false
+                return DirectOpenResult.Unavailable
             }
             crossProfileApps.startActivity(intent, profile, activity)
-            true
+            DirectOpenResult.Opened
         }.onFailure {
             DiagnosticLog.w(TAG, "direct profile downloads launch failed; falling back to intent forwarder", it)
-        }.getOrDefault(false)
+        }.getOrDefault(DirectOpenResult.Unavailable)
     }
 
-    private fun prepareForwarderIntent(context: Context, profile: UserHandle, intent: Intent): Intent? {
-        installForwarding(context, profile)
-        val forwarder = findCrossProfileForwarder(context, intent) ?: return null
-        return intent.setComponent(forwarder).addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
+    private fun prepareForwarderIntent(context: Context, intent: Intent): ProfileBridgeResult<Intent?> {
+        val install = installForwarding(context)
+        if (install !is ProfileBridgeResult.Value) return install.asFailureResult()
+        if (install.value != true) return ProfileBridgeResult.Value(null)
+        val forwarder = findCrossProfileForwarder(context, intent) ?: return ProfileBridgeResult.Value(null)
+        return ProfileBridgeResult.Value(intent.setComponent(forwarder).addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION))
     }
 
-    private fun installForwarding(context: Context, profile: UserHandle): Boolean =
-        Shuttle(context, to = profile).invokeNoThrows {
+    private fun installForwarding(context: Context): ProfileBridgeResult<Boolean> =
+        runProfileBridgeOperation(context, TAG, "profile downloads forwarding install") {
             val filter = ProfileDownloadsLauncher.crossProfileActivityIntentFilter()
             val policies = DevicePolicies(this)
             policies.addCrossProfileIntentFilter(filter, ProfileDownloadsLauncher.crossProfileForwardingFlags())
@@ -137,7 +146,7 @@ internal class ProfileDownloadsOpener {
                 ProfileDownloadsLauncher.crossProfilePreferredActivityComponent(this),
             )
             true
-        } == true
+        }
 
     private fun findCrossProfileForwarder(context: Context, intent: Intent): ComponentName? =
         context.packageManager.queryIntentActivities(
@@ -147,6 +156,8 @@ internal class ProfileDownloadsOpener {
             .firstOrNull { it.activityInfo.packageName == "android" }
             ?.activityInfo
             ?.run { ComponentName(packageName, name) }
+
+    private enum class DirectOpenResult { Opened, PermissionRequestOpened, Unavailable }
 
     private fun str(context: Context, id: Int, vararg args: Any): String =
         PrismLocale.wrap(context).getString(id, *args)

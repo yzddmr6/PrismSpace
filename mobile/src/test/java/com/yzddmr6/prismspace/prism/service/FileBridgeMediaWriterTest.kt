@@ -41,10 +41,6 @@ class FileBridgeMediaWriterTest {
     private class RecordingMediaStore : FileBridgeMediaStore {
         val calls = mutableListOf<String>()
 
-        override fun deleteByDisplayName(displayName: String) {
-            calls += "delete:$displayName"
-        }
-
         override fun insert(displayName: String, mimeType: String, bytes: ByteArray, relativePath: String): String {
             calls += "insert:$displayName:$mimeType:${bytes.size}:$relativePath"
             return "content://images/1"

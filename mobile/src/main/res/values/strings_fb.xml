@@ -3,6 +3,8 @@
     <!-- FileBridgeService user-facing transfer results (were hardcoded Chinese) -->
     <string name="fb_need_create_space">Create a dual space first</string>
     <string name="fb_space_not_ready">Dual space isn\'t ready yet</string>
+    <string name="fb_space_inactive">Dual space is paused. Turn on work apps, then retry.</string>
+    <string name="fb_space_bridge_repair_needed">Dual space needs to reconnect before files can be copied.</string>
     <string name="fb_imported_to_dual">Imported into the dual space: %1$s</string>
     <string name="fb_imported_to_main">Imported into the main space: %1$s</string>
     <string name="fb_imported_to_main_gallery">Imported into the main space gallery: %1$s</string>
@@ -23,6 +25,8 @@
     <string name="fb_open_files_failed">Couldn\'t open the dual-space file manager (system forwarding unavailable)</string>
     <string name="fb_opened_downloads">Opened the dual-space Downloads folder</string>
     <string name="fb_opened_profile_entry">Opened Prism-Dual Space</string>
+    <string name="fb_opened_cross_profile_permission">Opened Android cross-profile access permission. Grant it, then retry.</string>
+    <string name="fb_opened_profile_entry_retry">Opened Prism-Dual Space. Return to PrismSpace and retry after it reconnects.</string>
     <string name="fb_open_downloads_failed">Couldn\'t open the dual-space Downloads folder</string>
     <string name="fb_no_files_to_export">No PrismSpace files to export from the dual space</string>
     <string name="fb_exported_to_main">Exported to the main space: %1$s</string>

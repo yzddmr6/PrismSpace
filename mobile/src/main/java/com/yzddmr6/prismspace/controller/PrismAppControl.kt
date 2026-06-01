@@ -24,7 +24,10 @@ import com.yzddmr6.prismspace.mobile.R
 import com.yzddmr6.prismspace.model.interactive
 import com.yzddmr6.prismspace.prism.compose.vm.launchFeedback
 import com.yzddmr6.prismspace.prism.compose.vm.prismResolver
-import com.yzddmr6.prismspace.shuttle.Shuttle
+import com.yzddmr6.prismspace.prism.service.ProfileBridgeResult
+import com.yzddmr6.prismspace.prism.service.profileBridgeFailureMessage
+import com.yzddmr6.prismspace.prism.service.runProfileBridgeOperation
+import com.yzddmr6.prismspace.shuttle.DEFAULT_SYNC_TIMEOUT_MS
 import com.yzddmr6.prismspace.util.Activities
 import com.yzddmr6.prismspace.util.DevicePolicies
 import com.yzddmr6.prismspace.util.IntentCompat
@@ -50,7 +53,7 @@ object PrismAppControl {
 		else {
 			Activities.startActivity(activity, Intent(Intent.ACTION_UNINSTALL_PACKAGE)
 					.setData(Uri.fromParts("package", app.packageName, null)).putExtra(Intent.EXTRA_USER, app.user))
-			if (! Users.isProfileRunning(activity, app.user))   // App clone can actually be removed in quiet mode, without callback triggered.
+			if (! Users.isProfileAvailable(activity, app.user))   // App clone can actually be removed in quiet mode, without callback triggered.
 				if (! activity.isDestroyed) AppStateTrackingHelper.requestSyncWhenResumed(activity, app.packageName, app.user) }
 	}
 
@@ -64,8 +67,17 @@ object PrismAppControl {
 
 	private fun unfreezeAndLaunch(context: Context, app: PrismAppInfo) {
 		val pkg = app.packageName
-		val ready = Shuttle(context, to = app.user).invokeNoThrowsWithin(with = pkg) { PrismManager.ensureAppFreeToLaunch(this, it) }
-		if (ready == null) return toastLaunch(context, LaunchResult.SpaceNotReady, app.label.toString(), pkg)
+		val ready = when (val result = runProfileBridgeOperation(
+			context,
+			TAG,
+			"unfreeze before launch pkg=$pkg",
+			target = app.user,
+			timeoutMs = DEFAULT_SYNC_TIMEOUT_MS,
+		) { PrismManager.ensureAppFreeToLaunch(this, pkg) }) {
+			is ProfileBridgeResult.Value -> result.value
+			else -> return toastBridgeFailure(context, result)
+		}
+		if (ready == null) return toastLaunch(context, LaunchResult.Unknown("empty_unfreeze_result"), app.label.toString(), pkg)
 		if (ready.isNotEmpty()) return toastLaunch(context, LaunchResult.Unknown(ready), app.label.toString(), pkg)
 		toastLaunch(context, PrismManager.launchApp(context, pkg, app.user), Apps.of(context).getAppName(pkg).toString(), pkg)
 	}
@@ -97,19 +109,20 @@ object PrismAppControl {
 
 	/** @return true if not frozen (neither hidden nor suspended) or successfully unfrozen, false otherwise. */
 	private fun unfreezeIfNeeded(app: PrismAppInfo): Boolean {
-		return if (! app.isHidden && ! app.isSuspended) true else unfreeze(app).toastIfNull(app.context()) ?: false
+		return if (! app.isHidden && ! app.isSuspended) true else unfreeze(app) == true
 	}
 
 	@JvmStatic fun freeze(app: PrismAppInfo): Boolean {
-		val frozen = Shuttle(app.context(), to = app.user).invokeNoThrows(with = app.packageName) {
-			ensureAppHiddenState(this, it, true) }.toastIfNull(app.context()) ?: false
+		val frozen = runAppControl(app.context(), app.user, "freeze pkg=${app.packageName}") {
+			ensureAppHiddenState(this, app.packageName, true)
+		} ?: false
 		if (frozen && app.isSystem) stopTreatingHiddenSysAppAsDisabled(app)
 		return frozen
 	}
 
 	@JvmStatic fun unfreeze(app: PrismAppInfo) = unfreeze(app.context(), app.user, app.packageName)
 	private fun unfreeze(context: Context, profile: UserHandle, pkg: String) =
-		Shuttle(context, to = profile).invokeNoThrows { ensureAppHiddenState(this, pkg, false) }.toastIfNull(context)
+		runAppControl(context, profile, "unfreeze pkg=$pkg") { ensureAppHiddenState(this, pkg, false) }
 
 	@OwnerUser @ProfileUser private fun ensureAppHiddenState(context: Context, pkg: String, hidden: Boolean): Boolean {
 		val policies = DevicePolicies(context)
@@ -123,34 +136,37 @@ object PrismAppControl {
 	}
 
 	@JvmStatic fun setSuspended(app: PrismAppInfo, suspended: Boolean) =
-		Shuttle(app.context(), to = app.user).invoke(with = app.packageName) { setPackageSuspended(this, it, suspended) }
+		runAppControl(app.context(), app.user, "set suspended pkg=${app.packageName} suspended=$suspended") {
+			setPackageSuspended(this, app.packageName, suspended)
+		} == true
 	private fun setPackageSuspended(context: Context, pkg: String, suspended: Boolean)
 			= setPackagesSuspended(context, arrayOf(pkg), suspended).isEmpty()
 	fun setPackagesSuspended(context: Context, pkgs: Array<String>, suspended: Boolean): Array<String>
 			= DevicePolicies(context).invoke(DevicePolicyManager::setPackagesSuspended, pkgs, suspended)
 
-	/** Bulk suspend/restore every app of one dual space, routed through [Shuttle] so the
+	/** Bulk suspend/restore every app of one dual space, routed through the profile bridge so the
 	 * DPM call runs as profile owner inside the work profile. The low-level
 	 * [setPackagesSuspended] helper requires a profile context.
 	 * @return packages that could not be updated, or null if the profile is not ready. */
 	@JvmStatic fun setSpaceSuspended(apps: List<PrismAppInfo>, suspended: Boolean): Array<String>? {
 		if (apps.isEmpty()) return emptyArray()
 		val pkgs = apps.map { it.packageName }.toTypedArray()
-		return Shuttle(apps.first().context(), to = apps.first().user)
-				.invokeNoThrows(with = pkgs) { setPackagesSuspended(this, it, suspended) }
+		return runAppControl(apps.first().context(), apps.first().user, "set space suspended count=${pkgs.size} suspended=$suspended") {
+			setPackagesSuspended(this, pkgs, suspended)
+		}
 	}
 
 	/** Whole-space freeze: hide every user clone of one dual space, routed through
-	 * [Shuttle] so the DPM call runs as profile owner inside the work profile. It uses the same
+	 * the profile bridge so the DPM call runs as profile owner inside the work profile. It uses the same
 	 * freeze mechanism as per-app freeze so badge and recovery behavior stay consistent; unfreeze
 	 * also lifts any lingering suspended flag.
 	 *  @return packages that could not be updated, or null if the profile is not ready. */
 	@JvmStatic fun setSpaceFrozen(apps: List<PrismAppInfo>, frozen: Boolean): Array<String>? {
 		if (apps.isEmpty()) return emptyArray()
 		val pkgs = apps.map { it.packageName }.toTypedArray()
-		return Shuttle(apps.first().context(), to = apps.first().user).invokeNoThrows(with = pkgs) { ps ->
+		return runAppControl(apps.first().context(), apps.first().user, "set space frozen count=${pkgs.size} frozen=$frozen") {
 			val policies = DevicePolicies(this)
-			ps.filter { pkg -> ! applyFrozenWithFallback(policies, pkg, frozen) }.toTypedArray()
+			pkgs.filter { pkg -> ! applyFrozenWithFallback(policies, pkg, frozen) }.toTypedArray()
 		}
 	}
 
@@ -174,15 +190,28 @@ object PrismAppControl {
 	}
 
 	@JvmStatic fun unfreezeInitiallyFrozenSystemApp(app: PrismAppInfo) =
-		Shuttle(app.context(), to = app.user).invokeNoThrows(with = app.packageName) {
-			PrismManager.ensureAppHiddenState(this, it, false) }.toastIfNull(app.context())
+		runAppControl(app.context(), app.user, "unfreeze initial system pkg=${app.packageName}") {
+			PrismManager.ensureAppHiddenState(this, app.packageName, false)
+		}
 			?.also { if (it) stopTreatingHiddenSysAppAsDisabled(app) }
 
 	private fun stopTreatingHiddenSysAppAsDisabled(app: PrismAppInfo) =
-		Shuttle(app.context(), to = app.user).invokeNoThrows(with = app.packageName) {
-			ClonedHiddenSystemApps.setCloned(this, it) }.toastIfNull(app.context())
+		runAppControl(app.context(), app.user, "mark hidden system cloned pkg=${app.packageName}") {
+			ClonedHiddenSystemApps.setCloned(this, app.packageName)
+		}
 
-	private fun <T> T?.toastIfNull(context: Context) = apply {
-		if (this == null) Toasts.showLong(context, R.string.prompt_space_not_ready)
+	private fun <T> runAppControl(context: Context, profile: UserHandle, operation: String, block: Context.() -> T): T? =
+		when (val result = runProfileBridgeOperation(context, TAG, operation, target = profile, block = block)) {
+			is ProfileBridgeResult.Value -> result.value
+			else -> null.also { toastBridgeFailure(context, result) }
+		}
+
+	private fun toastBridgeFailure(context: Context, result: ProfileBridgeResult<*>) {
+		Toasts.showLong(
+			context,
+			profileBridgeFailureMessage(context, result, context.getString(R.string.prompt_space_not_ready)),
+		)
 	}
+
+	private const val TAG = "Prism.AppControl"
 }

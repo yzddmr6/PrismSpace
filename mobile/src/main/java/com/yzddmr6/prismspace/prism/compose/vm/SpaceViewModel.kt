@@ -362,7 +362,14 @@ class SpaceViewModel(app: Application) : AndroidViewModel(app) {
                 dual = SpaceSegmentState.Loading,
                 main = SpaceSegmentState.Loading,
             )
-            val (pair, allSpaces) = withContext(Dispatchers.IO) { loadBothSegments() to spaceRepo.spaces() }
+            val selectedDualId = _uiState.value.selectedDualSpaceId
+            val (pair, allSpaces, dualUsability) = withContext(Dispatchers.IO) {
+                val segments = loadBothSegments()
+                val spaces = spaceRepo.spaces()
+                val usability = (selectedDualId?.let { spaceRepo.space(it) } ?: spaceRepo.dualSpace())
+                    ?.let { spaceRepo.usabilityOf(it) } ?: SpaceUsability.NotProvisioned
+                Triple(segments, spaces, usability)
+            }
             val (dualRows, mainRows) = pair
             _uiState.value = _uiState.value.copy(
                 dual = if (dualRows.isEmpty()) SpaceSegmentState.Empty
@@ -371,7 +378,7 @@ class SpaceViewModel(app: Application) : AndroidViewModel(app) {
                        else SpaceSegmentState.Content(mainRows),
                 spaces = allSpaces,
                 experimentalMultiProfile = ExperimentalFlags.isMultiProfileEnabled(getApplication()),
-                dualUsability = (_uiState.value.selectedDualSpaceId?.let { spaceRepo.space(it) } ?: spaceRepo.dualSpace())?.let { spaceRepo.usabilityOf(it) } ?: SpaceUsability.NotProvisioned,
+                dualUsability = dualUsability,
             )
         }
     }
@@ -512,13 +519,20 @@ class SpaceViewModel(app: Application) : AndroidViewModel(app) {
     fun launch(context: Context, pkg: String, segment: SpaceSegment) {
         val app = appFor(pkg, segment) ?: return
         if (segment == SpaceSegment.Dual) {
-            val sel = _uiState.value.selectedDualSpaceId?.let { spaceRepo.space(it) }
-                ?: spaceRepo.dualSpace()
-            if (sel != null && spaceRepo.usabilityOf(sel) != SpaceUsability.Usable) {
-                val fb = launchFeedback(LaunchResult.SpaceNotReady, app.label.toString(), prismResolver(context))
-                setFeedback(fb.message, isError = fb.isError)
-                return
+            viewModelScope.launch checkSpace@{
+                val usable = withContext(Dispatchers.IO) {
+                    val sel = _uiState.value.selectedDualSpaceId?.let { spaceRepo.space(it) }
+                        ?: spaceRepo.dualSpace()
+                    sel != null && spaceRepo.usabilityOf(sel) == SpaceUsability.Usable
+                }
+                if (!usable) {
+                    val fb = launchFeedback(LaunchResult.SpaceNotReady, app.label.toString(), prismResolver(context))
+                    setFeedback(fb.message, isError = fb.isError)
+                    return@checkSpace
+                }
+                PrismAppControl.launch(context, app)
             }
+            return
         }
         PrismAppControl.launch(context, app)
     }
