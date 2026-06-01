@@ -25,7 +25,7 @@ import kotlinx.coroutines.withContext
 // Health enum used by the home overview card.
 // ---------------------------------------------------------------------------
 
-enum class SpaceHealth { Normal, NotCreated, Suspended, Locked, NeedsRepair }
+enum class SpaceHealth { Normal, NotCreated, Suspended, Locked, Checking, NeedsRepair }
 
 enum class HomePrimaryAction { OpenSpace, StartSetup, OpenSettings }
 
@@ -104,6 +104,17 @@ internal fun mapHome(
         mainCount = mainCount,
         cloneCount = cloneCount,
         primaryLabel = resolve(R.string.lz_home_label_unlock),
+        primaryRoute = null,
+        primaryAction = HomePrimaryAction.OpenSettings,
+    )
+    SpaceHealth.Checking -> HomeUiModel(
+        level = PrismLevel.Warn,
+        statusTitle = resolve(R.string.lz_home_status_checking_title),
+        statusBody = resolve(R.string.lz_home_status_checking_body),
+        tag = resolve(R.string.lz_home_tag_checking),
+        mainCount = mainCount,
+        cloneCount = cloneCount,
+        primaryLabel = resolve(R.string.lz_home_label_checking),
         primaryRoute = null,
         primaryAction = HomePrimaryAction.OpenSettings,
     )
@@ -212,7 +223,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             SpaceUsability.Suspended         -> SpaceHealth.Suspended
             SpaceUsability.LockedNeedsUnlock -> SpaceHealth.Locked
             SpaceUsability.BridgeNotReady    -> SpaceHealth.NeedsRepair
-            SpaceUsability.Unknown           -> SpaceHealth.NeedsRepair
+            SpaceUsability.Unknown           -> SpaceHealth.Checking
             SpaceUsability.Usable            -> SpaceHealth.Normal
         }
         DiagnosticLog.d(

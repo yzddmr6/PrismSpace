@@ -41,6 +41,11 @@
     <string name="lz_home_tag_locked">未解锁</string>
     <string name="lz_home_label_unlock">前往解锁</string>
 
+    <string name="lz_home_status_checking_title">正在检查双开空间</string>
+    <string name="lz_home_status_checking_body">正在确认主空间与双开空间的连接状态。</string>
+    <string name="lz_home_tag_checking">检查中</string>
+    <string name="lz_home_label_checking">打开设置</string>
+
     <string name="lz_home_status_needsrepair_title">双开空间需要修复</string>
     <string name="lz_home_status_needsrepair_body">上次检测发现问题，请前往设置修复。</string>
     <string name="lz_home_tag_needsrepair">需要修复</string>

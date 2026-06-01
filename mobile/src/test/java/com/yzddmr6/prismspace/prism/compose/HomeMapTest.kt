@@ -32,6 +32,10 @@ class HomeMapTest {
             R.string.lz_home_status_locked_body -> "双开空间需先解锁（输入锁屏密码）后才能使用分身。"
             R.string.lz_home_tag_locked -> "未解锁"
             R.string.lz_home_label_unlock -> "前往解锁"
+            R.string.lz_home_status_checking_title -> "正在检查双开空间"
+            R.string.lz_home_status_checking_body -> "正在确认主空间与双开空间的连接状态。"
+            R.string.lz_home_tag_checking -> "检查中"
+            R.string.lz_home_label_checking -> "打开设置"
             R.string.lz_home_status_needsrepair_title -> "双开空间需要修复"
             R.string.lz_home_status_needsrepair_body -> "上次检测发现问题，请前往设置修复。"
             R.string.lz_home_tag_needsrepair -> "需要修复"
@@ -82,6 +86,16 @@ class HomeMapTest {
         assertEquals("双开空间已锁定", model.statusTitle)
         assertEquals("未解锁", model.tag)
         assertEquals(PrismLevel.Warn, model.level)
+    }
+
+    @Test
+    fun `Checking - level Warn, tag 检查中, no repair wording`() {
+        val model = mapHome(SpaceHealth.Checking, mainCount = 7, cloneCount = 2, resolve = resolve)
+        assertEquals(PrismLevel.Warn, model.level)
+        assertEquals("正在检查双开空间", model.statusTitle)
+        assertEquals("检查中", model.tag)
+        assertEquals("打开设置", model.primaryLabel)
+        assertEquals(HomePrimaryAction.OpenSettings, model.primaryAction)
     }
 
     @Test

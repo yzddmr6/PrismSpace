@@ -41,6 +41,11 @@
     <string name="lz_home_tag_locked">Locked</string>
     <string name="lz_home_label_unlock">Unlock</string>
 
+    <string name="lz_home_status_checking_title">Checking dual space</string>
+    <string name="lz_home_status_checking_body">PrismSpace is confirming the connection between spaces.</string>
+    <string name="lz_home_tag_checking">Checking</string>
+    <string name="lz_home_label_checking">Open settings</string>
+
     <string name="lz_home_status_needsrepair_title">Dual space needs repair</string>
     <string name="lz_home_status_needsrepair_body">A problem was found in the last check; go to Settings to repair it.</string>
     <string name="lz_home_tag_needsrepair">Needs repair</string>

@@ -23,6 +23,8 @@ class HomeStateTest {
             R.string.lz_home_tag_normal -> "正常"
             R.string.lz_home_tag_notcreated -> "未创建"
             R.string.lz_home_tag_suspended -> "已暂停"
+            R.string.lz_home_tag_checking -> "检查中"
+            R.string.lz_home_label_checking -> "打开设置"
             R.string.lz_home_tag_needsrepair -> "需要修复"
             R.string.lz_home_label_repair -> "修复双开空间"
             else -> ""
@@ -82,6 +84,24 @@ class HomeStateTest {
         assertTrue("Suspended should show repair button", model.showRepair)
         assertEquals(PrismLevel.Warn, model.level)
         assertEquals("已暂停", model.tag)
+    }
+
+    @Test
+    fun `Checking - showRepair true and level Warn`() {
+        val model = mapHomeState(
+            health = SpaceHealth.Checking,
+            mainCount = 4,
+            cloneCount = 1,
+            capabilityText = "普通模式可用",
+            versionName = "v1.2.0 (100)",
+            androidText = "16 (API 36)",
+            deviceText = "Xiaomi arm64-v8a",
+            resolve = resolve,
+        )
+        assertTrue("Checking should keep the settings affordance visible", model.showRepair)
+        assertEquals(PrismLevel.Warn, model.level)
+        assertEquals("检查中", model.tag)
+        assertEquals("打开设置", model.primaryLabel)
     }
 
     // NeedsRepair: showRepair=true, level=Error
