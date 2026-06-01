@@ -23,7 +23,7 @@ interface SpaceRepository {
     fun dualSpaces(): List<PrismSpace>
     /** Stable lookup by PrismSpace.id (any kind, including "main"). */
     fun space(id: String): PrismSpace?
-    /** CE-unlock-aware usability of the given space. */
+    /** Cheap CE-unlock-aware usability of the given space; bridge state comes from cache only. */
     fun usabilityOf(space: PrismSpace): SpaceUsability
     fun installedApps(space: PrismSpace): Collection<PrismAppInfo>
     /** Replaces PrismAppClones `targets.size` magic; == 1(main)+#managed-profiles. */

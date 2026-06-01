@@ -7,13 +7,13 @@ import com.yzddmr6.prismspace.common.app.AppListProvider
 import com.yzddmr6.prismspace.data.PrismAppInfo
 import com.yzddmr6.prismspace.data.PrismAppListProvider
 import com.yzddmr6.prismspace.mobile.R
-import com.yzddmr6.prismspace.shuttle.ShuttleProvider
 import com.yzddmr6.prismspace.util.PrismLocale
 import com.yzddmr6.prismspace.util.Users
 import com.yzddmr6.prismspace.util.Users.Companion.toId
 
 class DefaultSpaceRepository(private val appContext: Context) : SpaceRepository {
     private val provider get() = AppListProvider.getInstance<PrismAppListProvider>(appContext)
+    private val bridgeHealth = BridgeHealthRepository(appContext)
     // Space display names must follow the per-app language (Main + the profile default name).
     private val localized get() = PrismLocale.wrap(appContext)
 
@@ -50,7 +50,7 @@ class DefaultSpaceRepository(private val appContext: Context) : SpaceRepository 
 				?.isUserUnlocked(handle) == true
 			val base = spaceUsability(provisioned, running, unlocked, quietMode = quietMode)
 			if (base != SpaceUsability.Usable) return base
-			val bridgeReady = ShuttleProvider.health(appContext, handle).available
+			val bridgeReady = bridgeHealth.cachedHealth(handle)?.available
 			spaceUsability(provisioned, running, unlocked, bridgeReady, quietMode)
 		} catch (e: SecurityException) {
             DiagnosticLog.w(TAG, "dual-space usability unavailable user=${handle.toId()}", e)

@@ -16,6 +16,7 @@ import com.yzddmr6.prismspace.engine.LaunchResult
 import com.yzddmr6.prismspace.prism.compose.settings.ExperimentalFlags
 import com.yzddmr6.prismspace.prism.compose.space.CreateSpaceResult
 import com.yzddmr6.prismspace.prism.compose.space.DeleteSpaceResult
+import com.yzddmr6.prismspace.prism.compose.space.BridgeHealthRepository
 import com.yzddmr6.prismspace.prism.compose.space.ExperimentalBlockInfo
 import com.yzddmr6.prismspace.prism.compose.space.PrismSpace
 import com.yzddmr6.prismspace.prism.compose.space.PrismSpaceKind
@@ -27,6 +28,7 @@ import com.yzddmr6.prismspace.prism.compose.space.SpaceUsability
 import com.yzddmr6.prismspace.prism.compose.space.experimentalBlockInfo
 import com.yzddmr6.prismspace.setup.PrismSetup
 import com.yzddmr6.prismspace.util.Users
+import com.yzddmr6.prismspace.util.Users.Companion.toId
 import com.yzddmr6.prismspace.data.PrismAppInfo
 import com.yzddmr6.prismspace.prism.ui.PrismAppsViewModel
 import kotlinx.coroutines.Dispatchers
@@ -256,6 +258,7 @@ class SpaceViewModel(app: Application) : AndroidViewModel(app) {
     private val _uiState = MutableStateFlow(SpaceUiState())
     val uiState: StateFlow<SpaceUiState> = _uiState
     private val spaceRepo: SpaceRepository by lazy { SpaceRepositoryProvider.get(getApplication()) }
+    private val bridgeHealthRepo: BridgeHealthRepository by lazy { BridgeHealthRepository(getApplication()) }
 
     // Internal cache so callers can look up PrismAppInfo by package.
     // One immutable snapshot is published atomically via a single @Volatile ref,
@@ -380,6 +383,14 @@ class SpaceViewModel(app: Application) : AndroidViewModel(app) {
                 experimentalMultiProfile = ExperimentalFlags.isMultiProfileEnabled(getApplication()),
                 dualUsability = dualUsability,
             )
+            val bridgeChanged = withContext(Dispatchers.IO) { refreshSelectedBridgeHealth(selectedDualId) }
+            if (bridgeChanged) {
+                val refreshedUsability = withContext(Dispatchers.IO) {
+                    (selectedDualId?.let { spaceRepo.space(it) } ?: spaceRepo.dualSpace())
+                        ?.let { spaceRepo.usabilityOf(it) } ?: SpaceUsability.NotProvisioned
+                }
+                _uiState.value = _uiState.value.copy(dualUsability = refreshedUsability)
+            }
         }
     }
 
@@ -657,6 +668,20 @@ class SpaceViewModel(app: Application) : AndroidViewModel(app) {
 
         appCache = AppCache(dualAppsLocal, mainAppsList)
         return dualRows to mainRows
+    }
+
+    private fun refreshSelectedBridgeHealth(selectedDualId: String?): Boolean {
+        val space = selectedDualId?.let { spaceRepo.space(it) } ?: spaceRepo.dualSpace() ?: return false
+        if (space.kind != PrismSpaceKind.Dual) return false
+        val profile = Users.getProfilesManagedByPrism()
+            .firstOrNull { it.toId() == space.userId }
+            ?: return false
+        val before = bridgeHealthRepo.cachedHealth(profile)?.diagnosticLine()
+        val after = runCatching { bridgeHealthRepo.refreshHealth(profile).diagnosticLine() }
+            .onFailure { DiagnosticLog.w(TAG, "refresh space bridge health failed user=${space.userId}", it) }
+            .getOrNull()
+            ?: return false
+        return before != after
     }
 }
 

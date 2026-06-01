@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.yzddmr6.prismspace.analytics.DiagnosticLog
 import com.yzddmr6.prismspace.controller.UserCloneRegistry
 import com.yzddmr6.prismspace.prism.compose.component.PrismLevel
+import com.yzddmr6.prismspace.prism.compose.space.BridgeHealthRepository
 import com.yzddmr6.prismspace.prism.compose.space.SpaceRepository
 import com.yzddmr6.prismspace.prism.compose.space.SpaceRepositoryProvider
 import com.yzddmr6.prismspace.prism.compose.space.SpaceUsability
@@ -154,6 +155,7 @@ internal fun mapHomeState(
 class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     private val spaceRepo: SpaceRepository by lazy { SpaceRepositoryProvider.get(getApplication()) }
+    private val bridgeHealthRepo: BridgeHealthRepository by lazy { BridgeHealthRepository(getApplication()) }
     private val capRepo: CapabilityRepository by lazy { CapabilityRepositoryProvider.get(getApplication()) }
 
     private val _uiState = MutableStateFlow<HomeUiModel?>(null)
@@ -163,6 +165,10 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { loadState() }
             _uiState.value = result
+            val bridgeChanged = withContext(Dispatchers.IO) { refreshBridgeHealthIfPossible() }
+            if (bridgeChanged) {
+                _uiState.value = withContext(Dispatchers.IO) { loadState() }
+            }
         }
     }
 
@@ -270,6 +276,16 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             profileOwnerLabel  = profileOwnerLabel,
             resolve            = resolve,
         )
+    }
+
+    private fun refreshBridgeHealthIfPossible(): Boolean {
+        val profile = Users.profile ?: return false
+        val before = bridgeHealthRepo.cachedHealth(profile)?.diagnosticLine()
+        val after = runCatching { bridgeHealthRepo.refreshHealth(profile).diagnosticLine() }
+            .onFailure { DiagnosticLog.w(TAG, "refresh home bridge health failed", it) }
+            .getOrNull()
+            ?: return false
+        return before != after
     }
 
 }

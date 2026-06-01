@@ -3,6 +3,7 @@ package com.yzddmr6.prismspace.shuttle
 import android.app.Activity
 import android.content.*
 import android.content.ContentResolver.SCHEME_CONTENT
+import android.content.pm.PackageManager.PERMISSION_DENIED
 import android.content.pm.PackageManager.PERMISSION_GRANTED
 import android.database.Cursor
 import android.net.Uri
@@ -12,6 +13,7 @@ import android.util.Size
 import android.util.SizeF
 import android.util.SparseArray
 import com.yzddmr6.prismspace.util.UserHandles
+import com.yzddmr6.prismspace.analytics.DiagnosticLog
 import com.yzddmr6.prismspace.analytics.analytics
 import com.yzddmr6.prismspace.util.DevicePolicies
 import com.yzddmr6.prismspace.util.OwnerUser
@@ -42,8 +44,11 @@ class ShuttleProvider: ContentProvider() {
 		@OwnerUser private fun isBackwardReady(c: Context, profile: UserHandle) =
 			c.isPermissionGranted(Uri.parse(CONTENT_URI), uid = UserHandles.getUid(profile.toId(), Process.myUid()))
 
+		private fun Context.uriPermissionCheck(uri: Uri, uid: Int = Process.myUid()) =
+			checkUriPermission(uri, 0, uid, Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+
 		private fun Context.isPermissionGranted(uri: Uri, uid: Int = Process.myUid()) =
-				checkUriPermission(uri, 0, uid, Intent.FLAG_GRANT_WRITE_URI_PERMISSION) == PERMISSION_GRANTED
+				uriPermissionCheck(uri, uid) == PERMISSION_GRANTED
 
 		fun hasForwardGrant(context: Context, profile: UserHandle) = isReady(context, profile)
 		@OwnerUser fun hasBackwardGrant(context: Context, profile: UserHandle) = isBackwardReady(context, profile)
@@ -54,8 +59,15 @@ class ShuttleProvider: ContentProvider() {
 				val unlocked = runCatching {
 					context.getSystemService(UserManager::class.java)?.isUserUnlocked(profile) == true
 				}.getOrDefault(false)
-				val forwardGrant = isReady(context, profile)
-				val backwardGrant = runCatching { isBackwardReady(context, profile) }.getOrDefault(false)
+				val forwardGrantCheck = context.uriPermissionCheck(buildCrossProfileUri(profile.toId()))
+				val forwardGrant = forwardGrantCheck == PERMISSION_GRANTED
+				val backwardGrantCheck = runCatching {
+					context.uriPermissionCheck(
+						Uri.parse(CONTENT_URI),
+						uid = UserHandles.getUid(profile.toId(), Process.myUid()),
+					)
+				}.getOrDefault(PERMISSION_DENIED)
+				val backwardGrant = backwardGrantCheck == PERMISSION_GRANTED
 				val ping = when {
 					quietMode -> ShuttleOutcome.Skipped("profile_quiet_mode")
 					!running -> ShuttleOutcome.Skipped("profile_not_running")
@@ -63,7 +75,17 @@ class ShuttleProvider: ContentProvider() {
 					!forwardGrant -> ShuttleOutcome.NotReady(ShuttleNotReadyCause.PermissionDenied)
 					else -> Shuttle(context, to = profile).invokeOutcomeWithin(timeoutMs) { true }
 				}
-				return ShuttleHealth(profile.toId(), running, quietMode, unlocked, forwardGrant, backwardGrant, ping)
+				return ShuttleHealth(
+					profile.toId(),
+					running,
+					quietMode,
+					unlocked,
+					forwardGrant,
+					backwardGrant,
+					ping,
+					forwardGrantCheck,
+					backwardGrantCheck,
+				)
 			}
 
 		fun initialize(context: Context) {
@@ -104,13 +126,32 @@ class ShuttleProvider: ContentProvider() {
 		}
 
 		@OwnerUser @ProfileUser fun collectActivityResult(context: Context, intent: Intent) {
-			val uri = intent.data ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri ?: return
-			Log.d(TAG, "[${Users.currentId()}] Received: $uri")
+			val uri = intent.data ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
+			if (uri == null) {
+				DiagnosticLog.w(
+					TAG,
+					"shuttle grant receive missing uri user=${Users.currentId()} " +
+						"data=${intent.data} clipItems=${intent.clipData?.itemCount ?: 0} flags=${intent.flags}",
+				)
+				return
+			}
+			DiagnosticLog.i(
+				TAG,
+				"shuttle grant received user=${Users.currentId()} uri=$uri flags=${intent.flags} " +
+					"clipItems=${intent.clipData?.itemCount ?: 0}",
+			)
 			takeUriGranted(context, uri)
 		}
 
 		@OwnerUser @ProfileUser fun takeUriGranted(context: Context, uri: Uri) {
-			context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+			try {
+				context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+				val check = context.uriPermissionCheck(uri)
+				DiagnosticLog.i(TAG, "shuttle grant take success user=${Users.currentId()} uri=$uri check=$check")
+			} catch (e: RuntimeException) {
+				DiagnosticLog.e(TAG, "shuttle grant take failed user=${Users.currentId()} uri=$uri", e)
+				throw e
+			}
 		}
 
 		fun buildCrossProfileUri(profileId: Int = Users.currentId()): Uri = Uri.parse("$SCHEME_CONTENT://$profileId@$AUTHORITY")
@@ -146,7 +187,7 @@ class ShuttleProvider: ContentProvider() {
 		override fun onCreate(savedInstanceState: Bundle?) {
 			super.onCreate(savedInstanceState)
 			finish()
-			intent.data?.also { contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+			intent.data?.also { takeUriGranted(this, it) }
 		}
 	}
 }

@@ -74,10 +74,14 @@ data class ShuttleHealth(
 	val forwardGrant: Boolean,
 	val backwardGrant: Boolean,
 	val ping: ShuttleOutcome<Boolean>,
+	val forwardGrantCheck: Int = if (forwardGrant) 0 else -1,
+	val backwardGrantCheck: Int = if (backwardGrant) 0 else -1,
 ) {
 	val available: Boolean get() = running && !quietMode && unlocked && ping is ShuttleOutcome.Value
 
 	fun diagnosticLine(): String =
 		"shuttleHealth profile=$profileId running=$running quietMode=$quietMode unlocked=$unlocked " +
-			"forwardGrant=$forwardGrant backwardGrant=$backwardGrant ping=${ping.diagnosticValue()} available=$available"
+			"forwardGrant=$forwardGrant forwardGrantCheck=$forwardGrantCheck " +
+			"backwardGrant=$backwardGrant backwardGrantCheck=$backwardGrantCheck " +
+			"ping=${ping.diagnosticValue()} available=$available"
 }

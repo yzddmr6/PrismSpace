@@ -35,4 +35,22 @@ class ShuttleOutcomeTest {
         }
         assertEquals(ShuttleOutcome.TimedOut, timeout)
     }
+
+    @Test fun healthDiagnosticIncludesRawPermissionChecks() {
+        val line = ShuttleHealth(
+            profileId = 10,
+            running = true,
+            quietMode = false,
+            unlocked = true,
+            forwardGrant = false,
+            backwardGrant = true,
+            ping = ShuttleOutcome.NotReady(ShuttleNotReadyCause.PermissionDenied),
+            forwardGrantCheck = -1,
+            backwardGrantCheck = 0,
+        ).diagnosticLine()
+
+        assertTrue(line.contains("forwardGrantCheck=-1"))
+        assertTrue(line.contains("backwardGrantCheck=0"))
+        assertTrue(line.contains("ping=not_ready:PermissionDenied"))
+    }
 }

@@ -15,10 +15,12 @@ import com.yzddmr6.prismspace.controller.UserCloneRegistry
 import com.yzddmr6.prismspace.mobile.R
 import com.yzddmr6.prismspace.prism.compose.component.PrismLevel
 import com.yzddmr6.prismspace.prism.compose.settings.ExperimentalFlags
+import com.yzddmr6.prismspace.prism.compose.space.BridgeHealthRepository
 import com.yzddmr6.prismspace.prism.compose.space.DeleteSpaceResult
 import com.yzddmr6.prismspace.prism.compose.space.SpaceProvisioningEngine
 import com.yzddmr6.prismspace.prism.compose.space.SpaceRepository
 import com.yzddmr6.prismspace.prism.compose.space.SpaceRepositoryProvider
+import com.yzddmr6.prismspace.prism.compose.space.SpaceUsability
 import com.yzddmr6.prismspace.prism.model.CapabilityAvailability
 import com.yzddmr6.prismspace.prism.model.CapabilityState
 import com.yzddmr6.prismspace.prism.model.PrismRootStatus
@@ -192,6 +194,7 @@ const val PRISM_RELEASES_URL = "https://github.com/yzddmr6/PrismSpace"
 class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     private val spaceRepo: SpaceRepository by lazy { SpaceRepositoryProvider.get(getApplication()) }
+    private val bridgeHealthRepo: BridgeHealthRepository by lazy { BridgeHealthRepository(getApplication()) }
     private val capRepo: CapabilityRepository by lazy { CapabilityRepositoryProvider.get(getApplication()) }
 
     private val _uiState = MutableStateFlow<SettingsUiModel?>(null)
@@ -424,17 +427,26 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
                     .onFailure { DiagnosticLog.w(TAG, "refresh users before repair failed", it) }
                 val profile = Users.profile ?: return@withContext RepairSpaceOutcome.StartSetup
                 val dual = spaceRepo.dualSpace() ?: return@withContext RepairSpaceOutcome.StartSetup
-                when (spaceRepo.usabilityOf(dual)) {
-                    com.yzddmr6.prismspace.prism.compose.space.SpaceUsability.NotProvisioned ->
+                val usability = spaceRepo.usabilityOf(dual).let { current ->
+                    if (current == SpaceUsability.Unknown || current == SpaceUsability.BridgeNotReady) {
+                        runCatching { bridgeHealthRepo.refreshHealth(profile) }
+                            .onFailure { DiagnosticLog.w(TAG, "refresh bridge health before repair failed", it) }
+                        spaceRepo.usabilityOf(dual)
+                    } else {
+                        current
+                    }
+                }
+                when (usability) {
+                    SpaceUsability.NotProvisioned ->
                         RepairSpaceOutcome.StartSetup
-                    com.yzddmr6.prismspace.prism.compose.space.SpaceUsability.Suspended,
-                    com.yzddmr6.prismspace.prism.compose.space.SpaceUsability.LockedNeedsUnlock ->
+                    SpaceUsability.Suspended,
+                    SpaceUsability.LockedNeedsUnlock ->
                         RepairSpaceOutcome.Activate(profile)
-                    com.yzddmr6.prismspace.prism.compose.space.SpaceUsability.BridgeNotReady ->
+                    SpaceUsability.BridgeNotReady ->
                         RepairSpaceOutcome.RepairBridge(profile)
-                    com.yzddmr6.prismspace.prism.compose.space.SpaceUsability.Unknown ->
+                    SpaceUsability.Unknown ->
                         RepairSpaceOutcome.RepairBridge(profile)
-                    com.yzddmr6.prismspace.prism.compose.space.SpaceUsability.Usable ->
+                    SpaceUsability.Usable ->
                         RepairSpaceOutcome.AlreadyReady
                 }
             }
