@@ -48,4 +48,13 @@
     <string name="lz_pf_install_need_perm">请先允许 PrismSpace 安装未知应用，然后再点「安装」。</string>
     <string name="lz_pf_install_source_need_perm">请允许这个文件应用安装未知应用，然后回到 PrismSpace 再打开 APK。</string>
     <string name="lz_pf_install_use_prismspace">系统文件应用无法授权安装 APK，请在这里点「安装」继续。</string>
+    <!-- 安装结果分类（系统拒绝 / 用户取消） -->
+    <string name="lz_pf_install_refused_title">系统安装器未能完成安装</string>
+    <string name="lz_pf_install_refused_body">系统安装器在弹出确认前就中止了本次安装（%1$s）。这不是你取消的。可以改用系统安装器直接打开安装包；如果主空间已配置 Shizuku 或 ROOT，也可以回到主空间重新添加分身并选择相应模式。</string>
+    <string name="lz_pf_install_refused_split">此应用由多个安装包组成，系统文件管理器无法一次安装；请回主空间使用 Shizuku / ROOT 模式添加分身。</string>
+    <string name="lz_pf_install_open_with_system">用系统安装器打开</string>
+    <string name="lz_pf_install_refused_how_to_report">如何反馈</string>
+    <string name="lz_pf_install_report_hint">回到主空间 → 设置 → 导出诊断，把文件发给我们。</string>
+    <string name="lz_pf_install_failed_title">安装失败</string>
+    <string name="lz_pf_install_cancelled">已取消安装。</string>
 </resources>
