@@ -246,6 +246,60 @@ fun PrismProfileEntryScreen() {
                 Spacer(Modifier.height(16.dp))
             }
         }
+
+        // The session result is classified, not guessed: a refusal by the ROM's own installer and a
+        // real user cancel arrive with the same code, so only a refusal gets a way out offered here.
+        ProfileInstallOutcomeDialog()
+    }
+}
+
+@Composable
+private fun ProfileInstallOutcomeDialog() {
+    val context = LocalContext.current
+    val outcome by ProfileApkInstaller.lastOutcome.collectAsState()
+    val reportHint = stringResource(R.string.lz_pf_install_report_hint)
+    val howToReport: @Composable () -> Unit = {
+        TextButton(onClick = { Toast.makeText(context, reportHint, Toast.LENGTH_LONG).show() }) {
+            Text(stringResource(R.string.lz_pf_install_refused_how_to_report))
+        }
+    }
+    when (val current = outcome) {
+        is ProfileInstallOutcome.Refused -> AlertDialog(
+            onDismissRequest = { ProfileApkInstaller.consumeOutcome() },
+            title = { Text(stringResource(R.string.lz_pf_install_refused_title)) },
+            text = {
+                val body = stringResource(R.string.lz_pf_install_refused_body, current.installerLabel ?: "?")
+                // A split suite cannot be installed by a file manager at all — say so instead of
+                // offering a button that would fail.
+                Text(if (current.singleApk) body else body + "\n\n" + stringResource(R.string.lz_pf_install_refused_split))
+            },
+            confirmButton = {
+                if (current.singleApk) {
+                    TextButton(onClick = {
+                        ProfileApkInstaller.consumeOutcome()
+                        ProfileApkInstaller.openRefusedWithSystemInstaller(context)
+                    }) { Text(stringResource(R.string.lz_pf_install_open_with_system)) }
+                } else {
+                    TextButton(onClick = { ProfileApkInstaller.consumeOutcome() }) {
+                        Text(stringResource(android.R.string.ok))
+                    }
+                }
+            },
+            dismissButton = howToReport,
+        )
+        is ProfileInstallOutcome.Failed -> AlertDialog(
+            onDismissRequest = { ProfileApkInstaller.consumeOutcome() },
+            title = { Text(stringResource(R.string.lz_pf_install_failed_title)) },
+            // Full system message, untruncated: it is the only evidence the user can forward.
+            text = { Text(current.message) },
+            confirmButton = {
+                TextButton(onClick = { ProfileApkInstaller.consumeOutcome() }) {
+                    Text(stringResource(android.R.string.ok))
+                }
+            },
+            dismissButton = howToReport,
+        )
+        else -> Unit
     }
 }
 

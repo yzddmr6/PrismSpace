@@ -48,4 +48,13 @@
     <string name="lz_pf_install_need_perm">Allow PrismSpace to install unknown apps, then tap Install again.</string>
     <string name="lz_pf_install_source_need_perm">Allow this file app to install unknown apps, then return to PrismSpace and open the APK again.</string>
     <string name="lz_pf_install_use_prismspace">This system file app cannot be authorized for APK install. Tap Install here to continue with PrismSpace.</string>
+    <!-- Install result classification (system refusal vs user cancel) -->
+    <string name="lz_pf_install_refused_title">The system installer did not complete the install</string>
+    <string name="lz_pf_install_refused_body">The system installer (%1$s) aborted this install before showing its confirmation. You did not cancel it. You can open the package directly with the system installer; if Shizuku or ROOT is set up in the main space, you can also go back and add the clone again choosing that mode.</string>
+    <string name="lz_pf_install_refused_split">This app consists of several split packages, which the system file manager cannot install together. Go back to the main space and add the clone using Shizuku / ROOT mode.</string>
+    <string name="lz_pf_install_open_with_system">Open with system installer</string>
+    <string name="lz_pf_install_refused_how_to_report">How to report</string>
+    <string name="lz_pf_install_report_hint">Go back to the main space → Settings → Export diagnostics and send us the file.</string>
+    <string name="lz_pf_install_failed_title">Install failed</string>
+    <string name="lz_pf_install_cancelled">Install cancelled.</string>
 </resources>

@@ -20,4 +20,13 @@
     <string name="lz_files_gate_bridge">請先在設定中修復雙開空間連線，然後再傳送檔案</string>
     <string name="lz_files_gate_missing">請先建立雙開空間，然後再傳送檔案</string>
     <string name="lz_files_gate_unknown">請先在設定中修復雙開空間，然後再傳送檔案</string>
+    <!-- 安裝結果分類（系統拒絕 / 使用者取消） -->
+    <string name="lz_pf_install_refused_title">系統安裝器未能完成安裝</string>
+    <string name="lz_pf_install_refused_body">系統安裝器在彈出確認前就中止了這次安裝（%1$s）。這不是你取消的。可以改用系統安裝器直接開啟安裝包；如果主空間已設定 Shizuku 或 ROOT，也可以回到主空間重新新增分身並選擇對應模式。</string>
+    <string name="lz_pf_install_refused_split">此應用由多個安裝包組成，系統檔案管理器無法一次安裝；請回主空間使用 Shizuku / ROOT 模式新增分身。</string>
+    <string name="lz_pf_install_open_with_system">用系統安裝器開啟</string>
+    <string name="lz_pf_install_refused_how_to_report">如何回報</string>
+    <string name="lz_pf_install_report_hint">回到主空間 → 設定 → 匯出診斷，把檔案傳給我們。</string>
+    <string name="lz_pf_install_failed_title">安裝失敗</string>
+    <string name="lz_pf_install_cancelled">已取消安裝。</string>
 </resources>
