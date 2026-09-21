@@ -39,6 +39,9 @@
     <string name="setup_error_missing_managed_provisioning">抱歉，由於此裝置並未完整支援必需的「Android 工作資料」特性。</string>
     <string name="setup_error_provisioning_blocked_by_profile">偵測到裝置上已存在系統「應用雙開」或其他工作資料，建立工作資料的入口可能被佔用。請先在系統設定中關閉「應用雙開」或「手機分身」（或移除其他工作資料）後重試；也可以透過 Shizuku / ROOT 直接建立。</string>
     <string name="setup_error_provisioning_entry_stripped">此裝置的系統建立工作資料入口不可用（相關元件可能被移除或精簡），常規建立流程無法啟動。但裝置本身支援工作資料——你可以改用 Shizuku / ROOT 直接建立。</string>
+    <string name="setup_error_provisioning_disallowed_slot_occupied">系統回報目前無法建立工作資料夾：裝置上已存在另一個設定檔（系統「應用分身」/「應用雙開」使用者，或其他工作資料夾），而 Android 每位使用者只允許一個工作資料夾。請先在系統設定中關閉「應用分身」（移除全部分身應用）或移除其他工作資料夾，再重試。本次沒有建立任何內容。</string>
+    <string name="setup_error_provisioning_disallowed_by_policy">系統回報此裝置的系統政策禁止建立工作資料夾（限制項 no_add_managed_profile）。PrismSpace 無法解除該限制。本次沒有建立任何內容。</string>
+    <string name="setup_error_provisioning_disallowed_unknown">系統回報目前無法建立工作資料夾，且未向應用程式揭露原因。本次沒有建立任何內容。你可以仍然嘗試系統建立、改用 Shizuku / ROOT，或匯出診斷讓我們查看確切的系統狀態。</string>
     <string name="setup_error_existing_space_state">裝置上已有尚未就緒的雙開資料。請返回設定修復，或刪除後再重新建立。</string>
     <string name="setup_error_orphan_profile">Android 中已有不受 PrismSpace 管理的工作資料。請先在系統設定中確認並移除該資料。</string>
     <string name="setup_solution_for_cancelled_provision">建立雙開空間遇到了困難？\n\n如果建立過程被中斷，請重新進入系統建立流程，並確保 PrismSpace 允許背景啟動。部分深度客製系統還需要先關閉電池最佳化或安全限制，然後再重試。\n\nRoot 建立只作為進階兜底路徑，普通使用者路徑不依賴 Root。</string>

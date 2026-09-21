@@ -49,6 +49,11 @@ object SpaceStateClassifier {
         profile.prismPackagePresent || profile.ownershipMarkerPresent ||
             profile.profileOwnerPackage == prismPackage
 
+    /** True when no PrismSpace-owned profile exists: nothing at all, or only foreign profiles
+     *  (vendor clone users, other DPCs). Creation is allowed and no repair applies. */
+    fun ownProfileAbsent(state: SpaceState?): Boolean =
+        state == SpaceState.NoProfile || state is SpaceState.ForeignProfile
+
     /**
      * Select one deterministic PrismSpace candidate, then classify by the first failed invariant.
      * Ownership evidence outranks every other signal: without it a profile is foreign, never an

@@ -12,36 +12,61 @@ import org.junit.Test
 
 class SetupCompletionDecisionTest {
 
+    private fun action(
+        resultCode: Int,
+        state: SpaceState?,
+        elapsedMs: Long? = null,
+        precheckRefused: Boolean = false,
+    ) = setupCompletionAction(resultCode, state, elapsedMs, precheckRefused)
+
     @Test fun `healthy facts finish regardless of activity result`() {
+        assertEquals(SetupCompletionAction.Finish, action(Activity.RESULT_OK, SpaceState.Healthy(20)))
+        assertEquals(SetupCompletionAction.Finish, action(Activity.RESULT_CANCELED, SpaceState.Healthy(20)))
         assertEquals(
             SetupCompletionAction.Finish,
-            setupCompletionAction(Activity.RESULT_OK, SpaceState.Healthy(20)),
-        )
-        assertEquals(
-            SetupCompletionAction.Finish,
-            setupCompletionAction(Activity.RESULT_CANCELED, SpaceState.Healthy(20)),
+            action(Activity.RESULT_CANCELED, SpaceState.Healthy(20), elapsedMs = 400L, precheckRefused = true),
         )
     }
 
     @Test fun `explicit cancel with fresh no-profile facts shows cancellation`() {
-        assertEquals(
-            SetupCompletionAction.ShowCanceled,
-            setupCompletionAction(Activity.RESULT_CANCELED, SpaceState.NoProfile),
-        )
+        assertEquals(SetupCompletionAction.ShowCanceled, action(Activity.RESULT_CANCELED, SpaceState.NoProfile))
     }
 
     @Test fun `missing or incomplete facts keep waiting without inventing success`() {
+        assertEquals(SetupCompletionAction.WaitForHealth, action(Activity.RESULT_OK, SpaceState.NoProfile))
         assertEquals(
             SetupCompletionAction.WaitForHealth,
-            setupCompletionAction(Activity.RESULT_OK, SpaceState.NoProfile),
+            action(Activity.RESULT_CANCELED, SpaceState.HalfProvisioned(20, resumable = true)),
         )
+        assertEquals(SetupCompletionAction.WaitForHealth, action(Activity.RESULT_OK, null))
+        assertEquals(SetupCompletionAction.WaitForHealth, action(Activity.RESULT_OK, SpaceState.ForeignProfile(999)))
+        // No facts: a cancel code alone must not be turned into a refusal verdict either.
         assertEquals(
             SetupCompletionAction.WaitForHealth,
-            setupCompletionAction(Activity.RESULT_CANCELED, SpaceState.HalfProvisioned(20, resumable = true)),
+            action(Activity.RESULT_CANCELED, null, elapsedMs = 1_900L, precheckRefused = true),
         )
+    }
+
+    @Test fun `a cancel too fast for a human with a vendor clone user is a system refusal`() {
+        // ColorOS: user 999 is a vendor "app clone" profile, ManagedProvisioning returns
+        // RESULT_CANCELED about two seconds later without ever showing a screen to the user.
         assertEquals(
-            SetupCompletionAction.WaitForHealth,
-            setupCompletionAction(Activity.RESULT_OK, null),
+            SetupCompletionAction.ShowRefused,
+            action(Activity.RESULT_CANCELED, SpaceState.ForeignProfile(999), elapsedMs = 1_900L),
+        )
+    }
+
+    @Test fun `a cancel the user had time to perform stays a cancellation`() {
+        assertEquals(
+            SetupCompletionAction.ShowCanceled,
+            action(Activity.RESULT_CANCELED, SpaceState.ForeignProfile(999), elapsedMs = 8_000L),
+        )
+    }
+
+    @Test fun `a pre-flight refusal makes the cancel code the platform repeating itself`() {
+        assertEquals(
+            SetupCompletionAction.ShowRefused,
+            action(Activity.RESULT_CANCELED, SpaceState.NoProfile, elapsedMs = 8_000L, precheckRefused = true),
         )
     }
 

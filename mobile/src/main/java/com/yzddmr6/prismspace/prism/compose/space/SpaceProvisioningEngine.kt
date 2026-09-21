@@ -14,6 +14,7 @@ import com.yzddmr6.prismspace.prism.compose.vm.ShizukuUtil
 import com.yzddmr6.prismspace.prism.service.ProfileEntryLauncher
 import com.yzddmr6.prismspace.settings.PrismSettingsActivity
 import com.yzddmr6.prismspace.space.SpaceState
+import com.yzddmr6.prismspace.space.SpaceStateClassifier
 import eu.chainfire.libsuperuser.Shell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -79,7 +80,7 @@ object SpaceProvisioningEngine {
         val stateRepository = SpaceStateRepository(context)
         val preflight = stateRepository.preflightCreate()
             ?: return@withContext CreateSpaceResult.StateRefreshFailed
-        if (preflight != SpaceState.NoProfile && preflight !is SpaceState.ForeignProfile) {
+        if (!SpaceStateClassifier.ownProfileAbsent(preflight)) {
             DiagnosticLog.w(TAG, "privileged create blocked by state=$preflight")
             return@withContext CreateSpaceResult.BlockedByState(preflight)
         }
