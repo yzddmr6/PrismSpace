@@ -48,6 +48,9 @@ public class SetupViewModel {
 	public @StringRes int message;
 	public @Nullable Object[] message_params;
 	public int action_extra;
+	/** Secondary action, kept alongside {@link #action_extra} so overriding the primary with a
+	 *  fallback button never silently removes the only route to the setup help. */
+	public int action_secondary;
 	/** True when the error state should offer "try system setup anyway" — the resolveActivity
 	 *  pre-check is a heuristic and must never hard-block the one truthful test: attempting. */
 	public boolean try_provision_anyway;
@@ -96,8 +99,10 @@ public class SetupViewModel {
 			return buildManagedDeviceError(owner_label, context.getString(R.string.setup_unknown_device_owner));
 		}
 
-		reason("disallowed").send();		// Disallowed by DPC for unknown reason, just log this but let user have a try.
-		return null;
+		// The platform refused, and the refusal is the fact the user has to act on. Returning null
+		// here used to hand control to system provisioning anyway, which then returned
+		// RESULT_CANCELED within seconds and looked like a user cancellation.
+		return buildDisallowedProvisioningError(context);
 	}
 
 	private static Analytics.Event reason(final String reason) {
@@ -113,12 +118,8 @@ public class SetupViewModel {
 	 * and the user always keeps the option to attempt the system flow anyway.
 	 */
 	private static SetupViewModel buildMissingProvisioningError(final Context context) {
-		int profile_count = 0;
-		try {
-			final android.os.UserManager um = context.getSystemService(android.os.UserManager.class);
-			if (um != null) profile_count = Math.max(0, um.getUserProfiles().size() - 1);
-		} catch (final RuntimeException ignored) {}
 		final ProvisioningProbe probe = ProvisioningProbe.collect(context);
+		final int profile_count = probe.foreign_profile_count;
 		com.yzddmr6.prismspace.analytics.DiagnosticLog.INSTANCE.i(TAG,
 				"provisioning entry missing: " + probe.toLogString() + " profiles=" + profile_count);
 		reason("lack_managed_provisioning").withRaw("profiles", String.valueOf(profile_count))
@@ -142,6 +143,40 @@ public class SetupViewModel {
 		return buildMissingProvisioningError(context);
 	}
 
+	/**
+	 * The system provisioning entry resolves, yet {@code DPM.isProvisioningAllowed()} says no and
+	 * no device owner explains it. Android does not expose the cause, so the probe collects the two
+	 * realities that do explain it in the field — the {@code no_add_managed_profile} restriction and
+	 * a foreign profile already occupying the one-per-user managed profile slot (vendor "app clone"
+	 * users on ColorOS/MIUI) — and the copy only claims what the evidence supports. Launching the
+	 * system flow anyway stays available: the pre-check is not the truthful test, the attempt is.
+	 */
+	private static SetupViewModel buildDisallowedProvisioningError(final Context context) {
+		final ProvisioningProbe probe = ProvisioningProbe.collect(context);
+		com.yzddmr6.prismspace.analytics.DiagnosticLog.INSTANCE.i(TAG,
+				"provisioning disallowed by platform: " + probe.toLogString());
+		reason("disallowed").withRaw("restricted", String.valueOf(probe.add_managed_profile_restricted))
+				.withRaw("foreign", String.valueOf(probe.foreign_profile_count))
+				.withRaw("foreign_managed", String.valueOf(probe.foreign_managed_profile_count)).send();
+		final @StringRes int message = ProvisioningProbe.disallowedMessageFor(probe.add_managed_profile_restricted,
+				probe.foreign_profile_count, probe.foreign_managed_profile_count);
+		final SetupViewModel error = buildErrorVM(message, null);
+		if (ProvisioningProbe.shouldOfferPrivilegedFallback(probe.managed_users_feature))
+			error.withExtraAction(R.string.button_setup_space_privileged);
+		error.withTryProvisionAnyway();
+		com.yzddmr6.prismspace.analytics.DiagnosticLog.INSTANCE.i(TAG,
+				"setup error offered: message=" + context.getResources().getResourceEntryName(message)
+						+ " extra=" + (error.action_extra != 0 ? context.getResources().getResourceEntryName(error.action_extra) : "none")
+						+ " tryAnyway=" + error.try_provision_anyway);
+		return error;
+	}
+
+	/** Public entry for the Compose controller's post-result refusal handling, so the refusal error
+	 *  carries fresh probe evidence collected at the moment the system actually refused. */
+	public static SetupViewModel disallowedProvisioningErrorPublic(final Context context) {
+		return buildDisallowedProvisioningError(context);
+	}
+
 	private static SetupViewModel buildErrorVM(final @StringRes int message, final @Nullable Analytics.Event event) {
 		if (event != null) event.send();
 		final SetupViewModel next = new SetupViewModel();
@@ -159,7 +194,14 @@ public class SetupViewModel {
 		return error;
 	}
 
-	private SetupViewModel withExtraAction(final @StringRes int text) { action_extra = text; return this; }
+	private SetupViewModel withExtraAction(final @StringRes int text) {
+		// The default primary action is the setup help. Overriding it with a fallback button must
+		// not be the reason the help disappears — demote it to the secondary slot instead.
+		if (action_extra == R.string.button_setup_help && text != R.string.button_setup_help)
+			action_secondary = R.string.button_setup_help;
+		action_extra = text;
+		return this;
+	}
 
 	private SetupViewModel withTryProvisionAnyway() { try_provision_anyway = true; return this; }
 

@@ -1,6 +1,8 @@
 package com.yzddmr6.prismspace.space
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SpaceStateClassifierTest {
@@ -103,6 +105,17 @@ class SpaceStateClassifierTest {
     @Test fun specialUserIdsAreDataNotSentinels() {
         assertEquals(SpaceState.Healthy(999), classify(SpaceFacts(listOf(profile(userId = 999)))))
         assertEquals(SpaceState.Healthy(100), classify(SpaceFacts(listOf(profile(userId = 100)))))
+    }
+
+    @Test fun ownProfileAbsentCoversNothingAndForeignOnly() {
+        assertTrue(SpaceStateClassifier.ownProfileAbsent(SpaceState.NoProfile))
+        assertTrue(SpaceStateClassifier.ownProfileAbsent(SpaceState.ForeignProfile(999)))
+        assertTrue(SpaceStateClassifier.ownProfileAbsent(SpaceState.ForeignProfile(999, "com.oplus.appplatform")))
+        // Unknown facts are not an absence claim, and every owned state must block creation.
+        assertFalse(SpaceStateClassifier.ownProfileAbsent(null))
+        assertFalse(SpaceStateClassifier.ownProfileAbsent(SpaceState.OrphanProfile(22)))
+        assertFalse(SpaceStateClassifier.ownProfileAbsent(SpaceState.Healthy(22)))
+        assertFalse(SpaceStateClassifier.ownProfileAbsent(SpaceState.HalfProvisioned(22, resumable = true)))
     }
 
     private companion object {

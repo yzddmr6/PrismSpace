@@ -4,12 +4,15 @@ import android.app.admin.DevicePolicyManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.os.UserHandle;
 import android.os.UserManager;
 
 import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
 
 import com.yzddmr6.prismspace.mobile.R;
+import com.yzddmr6.prismspace.util.Hacks;
+import com.yzddmr6.prismspace.util.UserHandles;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -60,10 +63,19 @@ public final class ProvisioningProbe {
 	public final @Nullable Boolean provisioning_allowed;
 	public final boolean managed_users_feature;
 	public final String restrictions;
+	/** The platform restriction that hard-blocks managed-profile creation for this user. */
+	public final boolean add_managed_profile_restricted;
+	/** Profiles in this group other than the current user — vendor clone users included. */
+	public final int foreign_profile_count;
+	/** How many of those foreign profiles are managed-profile-type users, or null when the
+	 *  hidden API that answers it is unavailable. Never a guess: null means unknown. */
+	public final @Nullable Integer foreign_managed_profile_count;
 
 	private ProvisioningProbe(final int enabled_handlers, final int all_handlers, final boolean package_present,
 			final @Nullable Integer package_enabled_setting, final @Nullable Boolean provisioning_allowed,
-			final boolean managed_users_feature, final String restrictions) {
+			final boolean managed_users_feature, final String restrictions,
+			final boolean add_managed_profile_restricted, final int foreign_profile_count,
+			final @Nullable Integer foreign_managed_profile_count) {
 		this.enabled_handlers = enabled_handlers;
 		this.all_handlers = all_handlers;
 		this.package_present = package_present;
@@ -71,6 +83,9 @@ public final class ProvisioningProbe {
 		this.provisioning_allowed = provisioning_allowed;
 		this.managed_users_feature = managed_users_feature;
 		this.restrictions = restrictions;
+		this.add_managed_profile_restricted = add_managed_profile_restricted;
+		this.foreign_profile_count = foreign_profile_count;
+		this.foreign_managed_profile_count = foreign_managed_profile_count;
 	}
 
 	public static ProvisioningProbe collect(final Context context) {
@@ -97,6 +112,9 @@ public final class ProvisioningProbe {
 		try { managed_users = pm.hasSystemFeature(PackageManager.FEATURE_MANAGED_USERS); } catch (final RuntimeException ignored) {}
 
 		String restriction_keys = "";
+		boolean add_managed_profile_restricted = false;
+		int foreign_profiles = 0;
+		Integer foreign_managed_profiles = null;
 		try {
 			final UserManager um = context.getSystemService(UserManager.class);
 			if (um != null) {
@@ -104,10 +122,37 @@ public final class ProvisioningProbe {
 				keys.removeIf(key -> !key.contains("user") && !key.contains("profile") && !key.contains("managed") && !key.contains("add"));
 				Collections.sort(keys);
 				restriction_keys = keys.toString();
+				add_managed_profile_restricted = um.getUserRestrictions().getBoolean(UserManager.DISALLOW_ADD_MANAGED_PROFILE, false);
+				final List<UserHandle> profiles = um.getUserProfiles();
+				foreign_profiles = Math.max(0, profiles.size() - 1);
+				foreign_managed_profiles = countForeignManagedProfiles(um, profiles);
 			}
 		} catch (final RuntimeException ignored) {}
 
-		return new ProvisioningProbe(enabled, all, present, enabled_setting, allowed, managed_users, restriction_keys);
+		return new ProvisioningProbe(enabled, all, present, enabled_setting, allowed, managed_users, restriction_keys,
+				add_managed_profile_restricted, foreign_profiles, foreign_managed_profiles);
+	}
+
+	/**
+	 * Diagnostic-only: how many foreign profiles are managed-profile-type users. Android exposes
+	 * this only through a hidden API, so any absence or denial must surface as "unknown" — an
+	 * invented count here would turn into invented user-facing copy.
+	 */
+	private static @Nullable Integer countForeignManagedProfiles(final UserManager um, final List<UserHandle> profiles) {
+		int count = 0;
+		for (final UserHandle profile : profiles) {
+			final int user_id = UserHandles.getIdentifier(profile);
+			if (user_id == UserHandles.MY_USER_ID) continue;
+			final Boolean managed;
+			try {
+				managed = Hacks.UserManager_isManagedProfile.invoke(user_id).on(um);
+			} catch (final RuntimeException | LinkageError ignored) {
+				return null;
+			}
+			if (managed == null) return null;		// Hack absent (hidden-API denial): unknown, never a guess.
+			if (managed) count ++;
+		}
+		return count;
 	}
 
 	public MissingState classify() {
@@ -134,6 +179,24 @@ public final class ProvisioningProbe {
 		return R.string.setup_error_missing_managed_provisioning;
 	}
 
+	/**
+	 * Copy for "the platform says managed-profile provisioning is not allowed" when the entry resolves.
+	 *
+	 * <p>The restriction is the only self-declared cause Android exposes. Otherwise the one-per-user
+	 * managed profile cap is the known ColorOS/MIUI reality: a vendor clone user occupies the slot.
+	 * With the hidden managed-profile check unavailable, a plain foreign profile is the best evidence
+	 * available and the copy stays hedged; with no foreign profile at all, the honest answer is that
+	 * the platform did not say why.
+	 */
+	static @StringRes int disallowedMessageFor(final boolean add_managed_profile_restricted, final int foreign_profile_count,
+			final @Nullable Integer foreign_managed_profile_count) {
+		if (add_managed_profile_restricted) return R.string.setup_error_provisioning_disallowed_by_policy;
+		final boolean slot_occupied = foreign_managed_profile_count != null ? foreign_managed_profile_count > 0
+				: foreign_profile_count > 0;
+		if (slot_occupied) return R.string.setup_error_provisioning_disallowed_slot_occupied;
+		return R.string.setup_error_provisioning_disallowed_unknown;
+	}
+
 	/** Pure policy: the privileged fallback never touches the missing provisioning package, so it
 	 *  is worth offering whenever the platform itself can run managed users. Withholding it in the
 	 *  ABSENT case (ROM stripped the entry but supports profiles, e.g. HyperOS 1) strands exactly
@@ -143,8 +206,10 @@ public final class ProvisioningProbe {
 	}
 
 	public String toLogString() {
-		return String.format(Locale.US, "state=%s handlers=%d/%d mp_pkg=%s mp_enabled=%s dpm_allowed=%s feature_mu=%s restr=%s",
+		return String.format(Locale.US, "state=%s handlers=%d/%d mp_pkg=%s mp_enabled=%s dpm_allowed=%s feature_mu=%s restr=%s"
+						+ " restricted=%s foreign=%d foreign_managed=%s",
 				classify(), enabled_handlers, all_handlers, package_present ? "present" : "absent",
-				package_enabled_setting, provisioning_allowed, managed_users_feature, restrictions);
+				package_enabled_setting, provisioning_allowed, managed_users_feature, restrictions,
+				add_managed_profile_restricted, foreign_profile_count, foreign_managed_profile_count);
 	}
 }

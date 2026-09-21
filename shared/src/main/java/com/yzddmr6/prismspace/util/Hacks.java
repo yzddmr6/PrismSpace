@@ -96,6 +96,21 @@ public class Hacks {
 	public static final Hack.HackedMethod2<int[], UserManager, Unchecked, Unchecked, Unchecked, Integer, Boolean>
 			UserManager_getProfileIds = Hack.onlyIf(SDK_INT <= O_MR1).into(UserManager.class).method("getProfileIds")
 			.returning(int[].class).fallbackReturning(null).withParams(int.class, boolean.class);
+	/** Diagnostic-only hidden API: tells a managed profile apart from other profile types (vendor
+	 *  clone users). Absent or denied access yields null, which callers must report as "unknown"
+	 *  instead of guessing — it must never drive product behavior, only the diagnostic log.
+	 *  Its absence is an expected outcome on ROMs that block this {@code @SystemApi} member, not a
+	 *  compatibility defect, so it is resolved with the assertion handler detached: the debug
+	 *  handler throws, and a diagnostic probe must never be able to break class initialization. */
+	public static final Hack.HackedMethod1<Boolean, UserManager, Unchecked, Unchecked, Unchecked, Integer>
+			UserManager_isManagedProfile;
+	static {
+		final Hack.AssertionFailureHandler assertion_handler = Hack.setAssertionFailureHandler(null);
+		try {
+			UserManager_isManagedProfile = Hack.into(UserManager.class).method("isManagedProfile")
+					.returning(boolean.class).fallbackReturning(null).withParam(int.class);
+		} finally { Hack.setAssertionFailureHandler(assertion_handler); }
+	}
 	public static final Hack.HackedMethod3<Context, Context, NameNotFoundException, Unchecked, Unchecked, String, Integer, UserHandle>
 			Context_createPackageContextAsUser = Hack.into(Context.class).method("createPackageContextAsUser").returning(Context.class)
 			.fallbackReturning(null).throwing(NameNotFoundException.class).withParams(String.class, int.class, UserHandle.class);

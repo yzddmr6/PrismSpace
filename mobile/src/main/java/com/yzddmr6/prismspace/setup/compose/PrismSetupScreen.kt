@@ -255,6 +255,18 @@ private fun SetupErrorDialog(
                     }) {
                         Text(stringResource(extra))
                     }
+                    // Kept separate from the primary extra action: a fallback button must not be
+                    // the reason the setup help becomes unreachable on exactly the error states
+                    // that need it most.
+                    val secondary = state.secondaryActionRes
+                    if (secondary != null) {
+                        PrismTextButton(onClick = {
+                            onExtraAction(secondary)
+                            onDismiss()
+                        }) {
+                            Text(stringResource(secondary))
+                        }
+                    }
                 } else {
                     PrismTextButton(onClick = onDismiss) {
                         Text(stringResource(android.R.string.ok))

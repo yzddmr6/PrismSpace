@@ -2,6 +2,7 @@ package com.yzddmr6.prismspace.prism.compose.space
 
 import com.yzddmr6.prismspace.space.SpaceBridgeCause
 import com.yzddmr6.prismspace.space.SpaceState
+import com.yzddmr6.prismspace.space.SpaceStateClassifier
 
 enum class SpacePresentationKind {
     Checking,
@@ -27,8 +28,7 @@ data class SpacePresentation(
     val isReady: Boolean get() = kind == SpacePresentationKind.Ready
     /** Whether a PrismSpace-owned profile exists. Foreign profiles belong to other apps/system
      *  features and never count. */
-    val hasProfile: Boolean get() =
-        state != null && state != SpaceState.NoProfile && state !is SpaceState.ForeignProfile
+    val hasProfile: Boolean get() = state != null && !SpaceStateClassifier.ownProfileAbsent(state)
     val permitsStateChange: Boolean get() = state != null
 }
 

@@ -81,6 +81,38 @@ class ProvisioningProbeTest {
     }
 
     @Test
+    fun `the platform restriction outranks every other disallowed explanation`() {
+        assertEquals(R.string.setup_error_provisioning_disallowed_by_policy,
+            ProvisioningProbe.disallowedMessageFor(true, 0, null))
+        assertEquals(R.string.setup_error_provisioning_disallowed_by_policy,
+            ProvisioningProbe.disallowedMessageFor(true, 1, 1))
+    }
+
+    @Test
+    fun `a managed foreign profile explains the occupied one-per-user slot`() {
+        assertEquals(R.string.setup_error_provisioning_disallowed_slot_occupied,
+            ProvisioningProbe.disallowedMessageFor(false, 1, 1))
+        // Known managed count of zero is evidence, not absence of evidence: the slot is free,
+        // so the honest copy is "the platform did not say why", not a slot-occupied guess.
+        assertEquals(R.string.setup_error_provisioning_disallowed_unknown,
+            ProvisioningProbe.disallowedMessageFor(false, 3, 0))
+    }
+
+    @Test
+    fun `without the hidden managed check any foreign profile is the best available evidence`() {
+        assertEquals(R.string.setup_error_provisioning_disallowed_slot_occupied,
+            ProvisioningProbe.disallowedMessageFor(false, 1, null))
+        assertEquals(R.string.setup_error_provisioning_disallowed_unknown,
+            ProvisioningProbe.disallowedMessageFor(false, 0, null))
+    }
+
+    @Test
+    fun `no restriction and no other profile admits the platform gave no reason`() {
+        assertEquals(R.string.setup_error_provisioning_disallowed_unknown,
+            ProvisioningProbe.disallowedMessageFor(false, 0, 0))
+    }
+
+    @Test
     fun `privileged fallback is offered exactly when the platform can run managed users`() {
         assertTrue(ProvisioningProbe.shouldOfferPrivilegedFallback(true))
         assertFalse(ProvisioningProbe.shouldOfferPrivilegedFallback(false))
