@@ -54,7 +54,7 @@ class BridgeCommandParcelTest {
                         BridgeTransferRole.Received,
                     ),
                 ),
-                "content://write",
+                PublishedFileDto("content://write", "name (1).png", "Pictures/PrismSpace/"),
             )
             assertRoundTrip(AbortWriteSession(BridgeFileStore.Media, "content://write", "id"), Unit)
             assertRoundTrip(

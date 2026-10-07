@@ -42,6 +42,14 @@ data class TransferLedgerDto(
     val role: BridgeTransferRole,
 ) : Parcelable
 
+/**
+ * What a finished write actually published: MediaStore may rename on a name collision
+ * ("photo (1).png"), so the real [displayName] / [relativePath] come back with the URI.
+ * Null fields mean the owner could not read them back.
+ */
+@Parcelize
+data class PublishedFileDto(val uri: String, val displayName: String?, val relativePath: String?) : Parcelable
+
 @Parcelize
 data class WriteSessionDto(val uri: String, val descriptor: ParcelFileDescriptor) : Parcelable
 
@@ -96,10 +104,10 @@ data class FinishWriteSession(
     val store: BridgeFileStore,
     val targetUri: String,
     val record: TransferLedgerDto? = null,
-) : DestinationCommand<String> {
+) : DestinationCommand<PublishedFileDto> {
     override val id get() = "file.finish_write_session"
-    override fun encodeResult(result: String, out: Bundle) = out.putString(RESULT, result)
-    override fun decodeResult(src: Bundle): String = requireNotNull(src.getString(RESULT))
+    override fun encodeResult(result: PublishedFileDto, out: Bundle) = out.putParcelable(RESULT, result)
+    override fun decodeResult(src: Bundle): PublishedFileDto = src.requireParcelableResult()
 }
 
 @Parcelize

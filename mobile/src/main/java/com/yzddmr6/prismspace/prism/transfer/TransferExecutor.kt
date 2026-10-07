@@ -3,6 +3,7 @@ package com.yzddmr6.prismspace.prism.transfer
 import com.yzddmr6.prismspace.analytics.DiagnosticLog
 import com.yzddmr6.prismspace.bridge.BridgeFileStore
 import com.yzddmr6.prismspace.bridge.BridgeTransferRole
+import com.yzddmr6.prismspace.bridge.PublishedFileDto
 import com.yzddmr6.prismspace.bridge.TransferLedgerDto
 import com.yzddmr6.prismspace.prism.service.CrossSpaceFileTransferPolicy
 import com.yzddmr6.prismspace.prism.service.FileTransferFailureReason
@@ -31,7 +32,7 @@ internal interface TransferPorts {
         mime: String,
         relativePath: String,
     ): ProfileBridgeResult<PendingWrite>
-    fun finish(targetUserId: Int, store: BridgeFileStore, uri: String, dto: TransferLedgerDto): ProfileBridgeResult<String>
+    fun finish(targetUserId: Int, store: BridgeFileStore, uri: String, dto: TransferLedgerDto): ProfileBridgeResult<PublishedFileDto>
     fun abort(targetUserId: Int, store: BridgeFileStore, uri: String, transferId: String)
     fun source(item: TransferItem): TransferSource
     /** Writes the "Sent" row in the source user; false when that write failed. */
@@ -43,6 +44,15 @@ internal sealed interface ExecutorEvent {
     data class ItemProgress(val index: Int, val written: Long) : ExecutorEvent
     data class ItemFinished(val index: Int, val outcome: TransferOutcome) : ExecutorEvent
 }
+
+/**
+ * Both ledger rows keep what MediaStore actually published (it renames on collision, e.g.
+ * "photo (1).png"); the requested name / folder are used only when the owner could not read them back.
+ */
+internal fun TransferLedgerDto.withPublished(published: PublishedFileDto): TransferLedgerDto = copy(
+    displayName = published.displayName?.trim()?.takeIf { it.isNotEmpty() } ?: displayName,
+    relativePath = published.relativePath?.trim()?.trimEnd('/')?.takeIf { it.isNotEmpty() } ?: relativePath,
+)
 
 /** Log sink; JVM tests record lines instead of hitting android.util.Log. */
 internal interface TransferLog {
@@ -153,15 +163,16 @@ internal class TransferExecutor(
                 .onFailure { log.warn("xfer.item.abort_failed id=$id", it) }
             return TransferOutcome.Failed(id, FileTransferFailureReason.TargetWriteFailed, destination.target)
         }
-        val published = finished.value ?: session.uri
+        val published = finished.value ?: PublishedFileDto(session.uri, null, null)
+        val actual = received.withPublished(published)
         val sentRecorded = runCatching {
-            ports.recordSent(destination.sourceUserId, received.copy(role = BridgeTransferRole.Sent), published)
+            ports.recordSent(destination.sourceUserId, actual.copy(role = BridgeTransferRole.Sent), published.uri)
         }.getOrDefault(false)
         if (!sentRecorded) {
             // The file really arrived; the result stays "sent". Only the source-side row is missing.
             log.warn("ledger.sent_record_failed id=$id source=${destination.sourceUserId}")
         }
-        return TransferOutcome.Sent(id, published, bytes)
+        return TransferOutcome.Sent(id, published.uri, bytes, actual.displayName, actual.relativePath)
     }
 
     /** Points the failure at the side that actually failed. */

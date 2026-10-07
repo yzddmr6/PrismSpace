@@ -3,6 +3,7 @@ package com.yzddmr6.prismspace.prism.transfer
 import com.yzddmr6.prismspace.bridge.BridgeFileStore
 import com.yzddmr6.prismspace.bridge.BridgeTransferDirection
 import com.yzddmr6.prismspace.bridge.BridgeTransferRole
+import com.yzddmr6.prismspace.bridge.PublishedFileDto
 import com.yzddmr6.prismspace.bridge.TransferLedgerDto
 import com.yzddmr6.prismspace.prism.service.FileTransferFailureReason
 import com.yzddmr6.prismspace.prism.service.ProfileBridgeResult
@@ -29,6 +30,8 @@ class TransferExecutorTest {
         val failRecordSent: Boolean = false,
         val unreadable: Set<String> = emptySet(),
         val onWrite: (String) -> Unit = {},
+        /** What the owner reads back after publishing; null = the read-back failed. */
+        val readBack: (TransferLedgerDto) -> Pair<String?, String?>? = { it.displayName to "${it.relativePath}/" },
     ) : TransferPorts {
         val ledgers = mutableMapOf<Int, MutableList<Pair<TransferLedgerDto, String>>>()
         val pendingRows = mutableSetOf<String>()
@@ -43,16 +46,20 @@ class TransferExecutorTest {
             return ProfileBridgeResult.Value(PendingWrite(uri, ByteArrayOutputStream()))
         }
 
-        override fun finish(targetUserId: Int, store: BridgeFileStore, uri: String, dto: TransferLedgerDto): ProfileBridgeResult<String> {
+        override fun finish(targetUserId: Int, store: BridgeFileStore, uri: String, dto: TransferLedgerDto): ProfileBridgeResult<PublishedFileDto> {
+            val actual = readBack(dto)
+            val published = PublishedFileDto(uri, actual?.first, actual?.second)
+            // The owner records "Received" with the same rule the executor applies to "Sent".
+            val receivedRow = dto.withPublished(published)
             if (failFinish) {
                 // Target published and recorded, but the answer never reached the caller.
-                ledgers.getOrPut(targetUserId) { mutableListOf() } += dto to uri
+                ledgers.getOrPut(targetUserId) { mutableListOf() } += receivedRow to uri
                 return ProfileBridgeResult.TimedOut
             }
             pendingRows -= uri
             publishedRows += uri
-            ledgers.getOrPut(targetUserId) { mutableListOf() } += dto to uri
-            return ProfileBridgeResult.Value(uri)
+            ledgers.getOrPut(targetUserId) { mutableListOf() } += receivedRow to uri
+            return ProfileBridgeResult.Value(published)
         }
 
         override fun abort(targetUserId: Int, store: BridgeFileStore, uri: String, transferId: String) {
@@ -201,6 +208,41 @@ class TransferExecutorTest {
         assertTrue(outcome is TransferOutcome.Sent)
         assertEquals(1, world.ledgers.getValue(dual).size)
         assertTrue(log.lines.any { it.startsWith("ledger.sent_record_failed id=t1") })
+    }
+
+    @Test fun renamedFileIsRecordedUnderItsRealNameOnBothSides() {
+        // MediaStore renamed the second copy of the same name on publish.
+        val world = FakeWorld(current = main, readBack = { "t1 (1).pdf" to "Download/PrismSpace/" })
+
+        val sent = TransferExecutor(world, RecordingLog()).run(request(main, dual, SpaceRole.Dual, "t1"), TransferCancellationSignal())
+            .single() as TransferOutcome.Sent
+
+        assertEquals("t1 (1).pdf", sent.displayName)
+        assertEquals("Download/PrismSpace", sent.relativePath)
+        assertEquals("t1 (1).pdf", world.ledgers.getValue(dual).single().first.displayName)
+        assertEquals("t1 (1).pdf", world.ledgers.getValue(main).single().first.displayName)
+        assertEquals("Download/PrismSpace", world.ledgers.getValue(main).single().first.relativePath)
+    }
+
+    @Test fun failedReadBackFallsBackToTheRequestedNameAndFolder() {
+        val world = FakeWorld(current = main, readBack = { null })
+
+        val sent = TransferExecutor(world, RecordingLog()).run(request(main, dual, SpaceRole.Dual, "t1"), TransferCancellationSignal())
+            .single() as TransferOutcome.Sent
+
+        assertEquals("t1.pdf", sent.displayName)
+        assertEquals("Download/PrismSpace", sent.relativePath)
+        assertEquals("t1.pdf", world.ledgers.getValue(main).single().first.displayName)
+        assertEquals("t1.pdf", world.ledgers.getValue(dual).single().first.displayName)
+    }
+
+    @Test fun publishedFactsOverrideOnlyWhenPresent() {
+        val requested = TransferLedgerDto("id", "a.png", "image/png", 1L, "Pictures/PrismSpace", null, BridgeTransferRole.Received)
+
+        assertEquals("a (2).png", requested.withPublished(PublishedFileDto("u", "a (2).png", "Pictures/PrismSpace/")).displayName)
+        assertEquals("Pictures/PrismSpace", requested.withPublished(PublishedFileDto("u", "a (2).png", "Pictures/PrismSpace/")).relativePath)
+        assertEquals(requested, requested.withPublished(PublishedFileDto("u", null, null)))
+        assertEquals(requested, requested.withPublished(PublishedFileDto("u", "  ", "/")))
     }
 
     @Test fun reasonsCollapseIntoFourClasses() {

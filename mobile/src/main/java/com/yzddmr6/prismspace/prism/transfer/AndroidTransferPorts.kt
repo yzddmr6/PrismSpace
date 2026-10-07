@@ -9,6 +9,7 @@ import com.yzddmr6.prismspace.bridge.BridgeTarget
 import com.yzddmr6.prismspace.bridge.BridgeTargets
 import com.yzddmr6.prismspace.bridge.FinishWriteSession
 import com.yzddmr6.prismspace.bridge.OpenWriteSession
+import com.yzddmr6.prismspace.bridge.PublishedFileDto
 import com.yzddmr6.prismspace.bridge.RecordTransfer
 import com.yzddmr6.prismspace.bridge.TransferLedgerDto
 import com.yzddmr6.prismspace.prism.service.ProfileBridgeResult
@@ -55,7 +56,7 @@ internal class AndroidTransferPorts(private val context: Context) : TransferPort
         store: BridgeFileStore,
         uri: String,
         dto: TransferLedgerDto,
-    ): ProfileBridgeResult<String> {
+    ): ProfileBridgeResult<PublishedFileDto> {
         val target = bridgeTargetFor(targetUserId) ?: return ProfileBridgeResult.SpaceMissing
         return runDestinationBridgeOperation(
             context,

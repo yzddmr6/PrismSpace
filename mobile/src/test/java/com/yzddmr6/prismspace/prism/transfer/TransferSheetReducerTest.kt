@@ -127,6 +127,12 @@ class TransferSheetReducerTest {
         assertEquals(SpaceRole.Main, result.rows.last().failedSpace)
     }
 
+    @Test fun resultRowShowsThePublishedName() {
+        val result = TransferSheetReducer.finished(request(1), listOf(TransferOutcome.Sent("i1", "u", 1, "i1 (1).pdf", "Download/PrismSpace")))
+
+        assertEquals("i1 (1).pdf", result.rows.single().name)
+    }
+
     @Test fun itemsWithoutOutcomeAreNeverShownAsSent() {
         val result = TransferSheetReducer.finished(request(2), listOf(TransferOutcome.Sent("i1", "u", 1)))
 

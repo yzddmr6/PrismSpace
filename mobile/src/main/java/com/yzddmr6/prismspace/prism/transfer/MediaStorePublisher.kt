@@ -112,6 +112,21 @@ internal class AndroidMediaRows(context: Context) : MediaRows {
 
     override fun openOutput(uri: String): OutputStream? = resolver.openOutputStream(Uri.parse(uri))
 
+    /** (DISPLAY_NAME, RELATIVE_PATH) of a published row; null when it cannot be read back. */
+    fun describe(uri: String): Pair<String?, String?>? = runCatching {
+        val projection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            arrayOf(MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.RELATIVE_PATH)
+        } else {
+            arrayOf(MediaStore.MediaColumns.DISPLAY_NAME)
+        }
+        resolver.query(Uri.parse(uri), projection, null, null, null)?.use { cursor ->
+            if (!cursor.moveToFirst()) return@use null
+            val name = cursor.getString(0)
+            val relativePath = if (projection.size > 1) cursor.getString(1) else null
+            name to relativePath
+        }
+    }.getOrNull()
+
     fun openDescriptor(uri: String): ParcelFileDescriptor? = resolver.openFileDescriptor(Uri.parse(uri), "w")
 
     override fun setPending(uri: String, pending: Boolean) {

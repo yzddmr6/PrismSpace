@@ -12,6 +12,7 @@ import com.yzddmr6.prismspace.bridge.CrossProfileForwardingKind
 import com.yzddmr6.prismspace.bridge.FileBridgePort
 import com.yzddmr6.prismspace.bridge.ImportApkSet
 import com.yzddmr6.prismspace.bridge.MAX_APK_PATH_COUNT
+import com.yzddmr6.prismspace.bridge.PublishedFileDto
 import com.yzddmr6.prismspace.bridge.RunBridgeSelfTest
 import com.yzddmr6.prismspace.bridge.SelfTestResultDto
 import com.yzddmr6.prismspace.bridge.TransferLedgerDto
@@ -31,6 +32,7 @@ import com.yzddmr6.prismspace.prism.transfer.TransferPaths
 import com.yzddmr6.prismspace.prism.transfer.TransferRole
 import com.yzddmr6.prismspace.prism.transfer.toLedgerRecord
 import com.yzddmr6.prismspace.prism.transfer.toOpenRequest
+import com.yzddmr6.prismspace.prism.transfer.withPublished
 import com.yzddmr6.prismspace.util.DPM
 import com.yzddmr6.prismspace.util.DevicePolicies
 import com.yzddmr6.prismspace.util.PrismLocale
@@ -313,15 +315,21 @@ internal object MobileFileBridgePort : FileBridgePort {
         return WriteSessionDto(row.uri, row.handle)
     }
 
-    /** Publishes the row first; only a published file earns its "Received" ledger row. */
+    /**
+     * Publishes the row first; only a published file earns its "Received" ledger row, recorded under
+     * the name / folder MediaStore actually gave it. The same facts go back to the caller for "Sent".
+     */
     override fun finishWriteSession(
         context: Context,
         store: BridgeFileStore,
         targetUri: String,
         record: TransferLedgerDto?,
-    ): String {
-        val published = MediaStorePublisher(AndroidMediaRows(context)).publish(targetUri)
-        record?.let { TransferLedger.record(context, it.toLedgerRecord(published)) }
+    ): PublishedFileDto {
+        val rows = AndroidMediaRows(context)
+        val uri = MediaStorePublisher(rows).publish(targetUri)
+        val actual = rows.describe(uri)
+        val published = PublishedFileDto(uri, actual?.first, actual?.second)
+        record?.let { TransferLedger.record(context, it.withPublished(published).toLedgerRecord(uri)) }
         return published
     }
 

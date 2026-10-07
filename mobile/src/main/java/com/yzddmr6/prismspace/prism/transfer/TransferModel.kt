@@ -87,7 +87,14 @@ enum class BatchRejection { NoFiles, AllUnreadable, MixedSourceUsers, UnmanagedS
 sealed interface TransferOutcome {
     val transferId: String
 
-    data class Sent(override val transferId: String, val publishedUri: String, val bytes: Long) : TransferOutcome
+    /** [displayName] / [relativePath]: what MediaStore actually published (it may rename on collision). */
+    data class Sent(
+        override val transferId: String,
+        val publishedUri: String,
+        val bytes: Long,
+        val displayName: String? = null,
+        val relativePath: String? = null,
+    ) : TransferOutcome
 
     /** [reason] is always one of [userFailureClass]'s four classes. */
     data class Failed(

@@ -28,7 +28,7 @@ interface FileBridgePort {
         store: BridgeFileStore,
         targetUri: String,
         record: TransferLedgerDto?,
-    ): String
+    ): PublishedFileDto
     fun abortWriteSession(context: Context, store: BridgeFileStore, targetUri: String, transferId: String?)
     fun importApkSet(
         context: Context,

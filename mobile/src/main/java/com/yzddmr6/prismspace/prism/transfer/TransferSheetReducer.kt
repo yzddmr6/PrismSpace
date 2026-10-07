@@ -123,7 +123,7 @@ internal object TransferSheetReducer {
         val rows = request.items.map { item ->
             val name = item.source.displayName
             when (val outcome = byId[item.transferId]) {
-                is TransferOutcome.Sent -> ItemResult(name, ItemStatus.Sent)
+                is TransferOutcome.Sent -> ItemResult(outcome.displayName ?: name, ItemStatus.Sent)
                 is TransferOutcome.Cancelled -> ItemResult(name, ItemStatus.Cancelled)
                 is TransferOutcome.Failed -> ItemResult(name, ItemStatus.Failed, outcome.reason, outcome.failedSpace)
                 // An item without an outcome never ran: report it as cancelled, never as sent.

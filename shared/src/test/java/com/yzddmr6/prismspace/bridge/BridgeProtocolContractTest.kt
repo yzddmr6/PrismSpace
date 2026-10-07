@@ -182,7 +182,7 @@ class BridgeProtocolContractTest {
             store: BridgeFileStore,
             targetUri: String,
             record: TransferLedgerDto?,
-        ) = targetUri
+        ) = PublishedFileDto(targetUri, record?.displayName, record?.relativePath)
         override fun abortWriteSession(
             context: Context,
             store: BridgeFileStore,
