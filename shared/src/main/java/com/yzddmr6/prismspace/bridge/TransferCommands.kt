@@ -4,13 +4,24 @@ import android.os.Bundle
 import android.os.Parcelable
 import kotlinx.parcelize.Parcelize
 
-/** What the caller wants to open for a transferred file, executed in the user that owns it. */
-enum class BridgeOpenMode { Folder, File }
+/**
+ * What the caller wants to open for a transferred file, executed in the user that owns it.
+ * [Share] starts the system share sheet there over the published files of [TransferOpenRequestDto.shareItems].
+ */
+enum class BridgeOpenMode { Folder, File, Share }
 
 /** Pre-flight answer from the owning user, so the caller can explain the outcome on its own screen. */
 enum class BridgeInspectResult { Exists, Missing, NoViewer }
 
-/** A pending "open this transferred file" request, parked in the owning user until its entry screen resumes. */
+/** One published file to share inside the user that owns it. */
+@Parcelize
+data class TransferShareItemDto(val contentUri: String, val mime: String?) : Parcelable
+
+/**
+ * A pending "open this transferred file" request, parked in the owning user until its entry screen resumes.
+ * [shareItems] is used by [BridgeOpenMode.Share] only (≥ 1 item); empty for the other modes. Both ends
+ * of the bridge are the same installed APK, so the defaulted field has no cross-version concern.
+ */
 @Parcelize
 data class TransferOpenRequestDto(
     val recordId: String,
@@ -18,6 +29,7 @@ data class TransferOpenRequestDto(
     val contentUri: String?,
     val mime: String?,
     val relativePath: String?,
+    val shareItems: List<TransferShareItemDto> = emptyList(),
 ) : Parcelable
 
 /** Writes one ledger row in the destination user (the source-side "Sent" row of a transfer). */

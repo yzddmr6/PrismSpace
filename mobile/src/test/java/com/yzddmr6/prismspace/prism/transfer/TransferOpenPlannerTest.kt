@@ -1,7 +1,10 @@
 package com.yzddmr6.prismspace.prism.transfer
 
+import com.yzddmr6.prismspace.bridge.BridgeInspectResult
 import com.yzddmr6.prismspace.prism.compose.vm.SpaceActionGate
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TransferOpenPlannerTest {
@@ -65,6 +68,119 @@ class TransferOpenPlannerTest {
 
     @Test fun requestSurvivesTheBridgeRoundTrip() {
         val request = TransferOpenRequest("id", OpenMode.File, "content://media/1", "image/png", "Pictures/PrismSpace")
+        assertEquals(request, request.toDto().toOpenRequest())
+    }
+
+    // ── Share ──
+
+    private val self = HandlerRef("com.yzddmr6.prismspace", "com.yzddmr6.prismspace.prism.ui.ImportToSpaceActivity")
+    private val toManaged = HandlerRef("android", "com.android.internal.app.ForwardIntentToManagedProfile")
+    private val messenger = HandlerRef("org.telegram.messenger", "org.telegram.ui.LaunchActivity")
+    private val png = ShareItem("content://media/external/images/media/1", "image/png")
+    private val pdf = ShareItem("content://media/external/downloads/2", null)
+
+    @Test fun shareFromTheOwningUserIsLocalEvenWhenTheGateIsClosed() {
+        // Vendor share proxy: the receiver ran in the target user, so the files already live here.
+        assertEquals(OpenRoute.Local, TransferOpenPlanner.planShareRoute(0, 0, 36, false, SpaceActionGate(false, "x")))
+        assertEquals(OpenRoute.Local, TransferOpenPlanner.planShareRoute(24, 24, 29, true, null))
+    }
+
+    @Test fun shareToTheOtherUserRoutesLikeOpeningASentRow() {
+        val usable = SpaceActionGate(true, null)
+        val closed = SpaceActionGate(false, "resume first")
+        val cases = listOf(
+            arrayOf<Any?>(24, 36, true, usable),
+            arrayOf<Any?>(24, 36, false, usable),
+            arrayOf<Any?>(24, 29, true, usable),
+            arrayOf<Any?>(24, 36, true, closed),
+            arrayOf<Any?>(null, 36, true, usable),
+            arrayOf<Any?>(null, 36, true, null),
+            arrayOf<Any?>(0, 36, true, null),
+        )
+        cases.forEach { (owner, sdk, can, gate) ->
+            assertEquals(
+                TransferOpenPlanner.planOpenRoute(TransferRole.Sent, owner as Int?, sdk as Int, can as Boolean, gate as SpaceActionGate?),
+                TransferOpenPlanner.planShareRoute(owner, 10, sdk, can, gate),
+            )
+        }
+        assertEquals(OpenRoute.CrossProfileStart(24), TransferOpenPlanner.planShareRoute(24, 0, 36, true, usable))
+        assertEquals(OpenRoute.QueuedEntry(24), TransferOpenPlanner.planShareRoute(24, 0, 36, false, usable))
+        assertEquals(OpenRoute.QueuedEntry(24), TransferOpenPlanner.planShareRoute(24, 0, 29, true, usable))
+        assertEquals(OpenRoute.Blocked("resume first"), TransferOpenPlanner.planShareRoute(24, 0, 36, true, closed))
+        assertTrue(TransferOpenPlanner.planShareRoute(null, 0, 36, true, usable) is OpenRoute.Blocked)
+    }
+
+    @Test fun oneItemIsSendAndMoreAreSendMultipleInRequestOrder() {
+        val single = TransferOpenPlanner.planShareIntent(listOf(png), listOf("image/png"), listOf(gallery, messenger), emptyList())
+        assertEquals(
+            SharePlan.Ready(TransferOpenPlanner.ACTION_SEND, "image/png", listOf(png.contentUri), emptyList()),
+            single,
+        )
+        val multi = TransferOpenPlanner.planShareIntent(
+            listOf(pdf, png),
+            listOf("application/pdf", "image/png"),
+            listOf(messenger),
+            emptyList(),
+        ) as SharePlan.Ready
+        assertEquals(TransferOpenPlanner.ACTION_SEND_MULTIPLE, multi.action)
+        assertEquals("*/*", multi.type)
+        assertEquals(listOf(pdf.contentUri, png.contentUri), multi.uris)
+    }
+
+    @Test fun shareChooserExcludesExactlyTheForwarderAndPrismSpaceItself() {
+        val plan = TransferOpenPlanner.planShareIntent(
+            listOf(png),
+            listOf("image/png"),
+            listOf(forwarder, self, messenger, toManaged, gallery, self),
+            listOf(self),
+        ) as SharePlan.Ready
+
+        assertEquals(setOf(forwarder, toManaged, self), plan.excluded.toSet())
+        assertEquals(plan.excluded.size, plan.excluded.distinct().size)
+        assertFalse(messenger in plan.excluded)
+        assertFalse(gallery in plan.excluded)
+    }
+
+    @Test fun onlyForwarderAndSelfMeansNoTargetAndNoItemsIsItsOwnCase() {
+        assertEquals(
+            SharePlan.NoTarget,
+            TransferOpenPlanner.planShareIntent(listOf(png), listOf("image/png"), listOf(forwarder, self), listOf(self)),
+        )
+        assertEquals(SharePlan.NoTarget, TransferOpenPlanner.planShareIntent(listOf(png), listOf("image/png"), emptyList(), emptyList()))
+        assertEquals(SharePlan.NoItems, TransferOpenPlanner.planShareIntent(emptyList(), emptyList(), listOf(messenger), emptyList()))
+    }
+
+    @Test fun shareMimeTypeCollapsesToTheNarrowestCommonType() {
+        assertEquals("image/png", TransferOpenPlanner.shareMimeType(listOf("image/png", "image/png")))
+        assertEquals("image/png", TransferOpenPlanner.shareMimeType(listOf("image/png", "IMAGE/PNG")))
+        assertEquals("image/*", TransferOpenPlanner.shareMimeType(listOf("image/png", "image/jpeg")))
+        assertEquals("image/*", TransferOpenPlanner.shareMimeType(listOf("image/png", "Image/JPEG")))
+        assertEquals("*/*", TransferOpenPlanner.shareMimeType(listOf("image/png", "application/pdf")))
+        assertEquals("application/pdf", TransferOpenPlanner.shareMimeType(listOf("application/pdf")))
+        assertEquals("*/*", TransferOpenPlanner.shareMimeType(emptyList()))
+    }
+
+    @Test fun keepPresentDropsMissingKeepsTheRestAndDistrustsBridgeFailures() {
+        val third = ShareItem("content://media/3", "image/jpeg")
+        assertEquals(
+            ShareFilter.Kept(listOf(png, third), 1),
+            TransferOpenPlanner.keepPresent(
+                listOf(png, pdf, third),
+                listOf(BridgeInspectResult.Exists, BridgeInspectResult.Missing, BridgeInspectResult.NoViewer),
+            ),
+        )
+        assertEquals(
+            ShareFilter.BridgeFailed,
+            TransferOpenPlanner.keepPresent(listOf(png, pdf), listOf(BridgeInspectResult.Exists, null)),
+        )
+        assertEquals(
+            ShareFilter.Kept(emptyList(), 2),
+            TransferOpenPlanner.keepPresent(listOf(png, pdf), listOf(BridgeInspectResult.Missing, BridgeInspectResult.Missing)),
+        )
+    }
+
+    @Test fun shareRequestSurvivesTheBridgeRoundTrip() {
+        val request = TransferOpenRequest("batch", OpenMode.Share, null, null, null, listOf(png, pdf))
         assertEquals(request, request.toDto().toOpenRequest())
     }
 }
