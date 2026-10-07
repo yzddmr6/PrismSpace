@@ -12,13 +12,14 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.concurrent.atomic.AtomicInteger
-import com.yzddmr6.prismspace.prism.ui.runCancellableTransferQueue
-import com.yzddmr6.prismspace.prism.ui.transferProgressPercent
+import com.yzddmr6.prismspace.prism.transfer.transferProgressPercent
 
 class CrossSpaceFileTransferPolicyTest {
     @Test fun imageAndDocumentDestinationsAreDeterministic() {
         assertEquals("Pictures/PrismSpace/", CrossSpaceFileTransferPolicy.destination("image/png").relativePath)
+        assertEquals("Pictures/PrismSpace", CrossSpaceFileTransferPolicy.destination("image/png").displayLocation)
         assertEquals("Download/PrismSpace/", CrossSpaceFileTransferPolicy.destination("application/pdf").relativePath)
+        assertEquals("Download/PrismSpace", CrossSpaceFileTransferPolicy.destination("application/pdf").displayLocation)
         assertFalse(CrossSpaceFileTransferPolicy.destination(null).isImage)
     }
 
@@ -143,21 +144,6 @@ class CrossSpaceFileTransferPolicyTest {
         assertEquals(SingleCopyTransferResult.Cancelled, cancelled)
         assertEquals(1, writeAborts)
         assertEquals(1, cancelAborts)
-    }
-
-    @Test fun cancellingQueuePreventsRemainingItemsFromStarting() {
-        val cancellation = TransferCancellationSignal()
-        val started = mutableListOf<Int>()
-
-        val results = runCancellableTransferQueue(listOf(1, 2, 3), cancellation) { _, item ->
-            started += item
-            cancellation.cancel()
-            FileTransferResult(success = true, message = "done")
-        }
-
-        assertEquals(listOf(1), started)
-        assertEquals(1, results.size)
-        assertTrue(cancellation.isCancelled())
     }
 
     @Test fun unknownSizeDoesNotInventPercentage() {

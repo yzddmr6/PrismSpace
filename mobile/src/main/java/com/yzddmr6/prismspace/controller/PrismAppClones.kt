@@ -71,7 +71,12 @@ import com.yzddmr6.prismspace.prism.service.FileTransferFailureReason
 import com.yzddmr6.prismspace.prism.service.FileTransferResult
 import com.yzddmr6.prismspace.prism.service.ProfileBridgeResult
 import com.yzddmr6.prismspace.prism.service.ProfileEntryLauncher
-import com.yzddmr6.prismspace.prism.service.TransferHistoryStore
+import com.yzddmr6.prismspace.prism.service.TransferDirection
+import com.yzddmr6.prismspace.prism.transfer.TransferKind
+import com.yzddmr6.prismspace.prism.transfer.TransferLedger
+import com.yzddmr6.prismspace.prism.transfer.TransferLedgerRecord
+import com.yzddmr6.prismspace.prism.transfer.TransferPaths
+import com.yzddmr6.prismspace.prism.transfer.TransferRole
 import com.yzddmr6.prismspace.prism.service.profileBridgeFailureMessage
 import com.yzddmr6.prismspace.prism.service.runProfileBridgeOperation
 import rikka.shizuku.Shizuku
@@ -268,10 +273,14 @@ class PrismAppClones(
 		}
 		if (result.success) {
 			ClonePreparationStore.add(context, pkg)
-			// Record the outgoing half in the main-space history as "label-package".
-			TransferHistoryStore.record(
-				context, source.label.toString(),
-				PrismLocale.wrap(context).getString(R.string.lz_app_clone_to_dual_space), false, packageName = pkg)
+			// The outgoing half in the main-space ledger, titled "label-package"; the dual half is
+			// recorded where the suite is published (MobileFileBridgePort.importApkSet).
+			TransferLedger.upsertApkSuite(context, TransferLedgerRecord(
+				id = UUID.randomUUID().toString(), displayName = source.label.toString(),
+				mime = "application/vnd.android.package-archive", sizeBytes = null, contentUri = result.targetUri,
+				relativePath = TransferPaths.DOWNLOAD_LOCATION, direction = TransferDirection.ToProfile,
+				role = TransferRole.Sent, kind = TransferKind.ApkSuite, packageName = pkg, apkUris = emptyList(),
+				timeMillis = System.currentTimeMillis(), legacy = false))
 		}
 		return result
 	}

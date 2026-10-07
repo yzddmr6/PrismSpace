@@ -1,92 +1,89 @@
 package com.yzddmr6.prismspace.prism.service
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ApkSuitePublisherTest {
 
-    @Test fun namesAreCanonicalAndLegacyDuplicatesStayInsideExactPackageNamespace() {
-        assertEquals("Label-pkg.apk", ApkSuiteNames.canonical("Label-pkg", 0))
-        assertEquals("Label-pkg.split2.apk", ApkSuiteNames.canonical("Label-pkg", 2))
-        assertEquals(".Label-pkg.prism-pending-token-1.apk", ApkSuiteNames.pending("Label-pkg", "token", 1))
-        assertTrue(ApkSuiteNames.isPublishedFor("Label-pkg", "Label-pkg.apk"))
-        assertTrue(ApkSuiteNames.isPublishedFor("Label-pkg", "Label-pkg.split1 (2).apk"))
-        assertTrue(ApkSuiteNames.isPublishedFor("Label-pkg", "Label-pkg (1).split1.apk"))
-        assertFalse(ApkSuiteNames.isPublishedFor("Label-pkg", "Label-other.apk"))
-        assertFalse(ApkSuiteNames.isPublishedFor("Label-pkg", ".Label-pkg.prism-pending-token-0.apk"))
-        assertTrue(ApkSuiteNames.isPendingFor("Label-pkg", ".Label-pkg.prism-pending-a1b2-0.apk"))
-        assertFalse(ApkSuiteNames.isPendingFor("Label-pkg", ".Other.prism-pending-a1b2-0.apk"))
+    @Test fun namesAreCanonicalInsideTheExactPackageNamespace() {
+        assertEquals("pkg.apk", ApkSuiteNames.canonical("pkg", 0))
+        assertEquals("pkg.split2.apk", ApkSuiteNames.canonical("pkg", 2))
+        assertEquals(".pkg.prism-pending-token-1.apk", ApkSuiteNames.pending("pkg", "token", 1))
     }
 
-    @Test fun completeSuiteReplacesPreviousRowsInOnePublishStep() {
-        val store = RecordingStore(previous = listOf(PublishedApk("old", "App-pkg.apk")))
-        val first = ApkSuitePublisher(store) { "fixed" }.replace(
+    @Test fun completeSuiteReplacesTheLedgerSuiteInOnePublishStep() {
+        val store = RecordingStore()
+        val published = ApkSuitePublisher(store) { "fixed" }.replace(
             listOf("/base.apk", "/split.apk"),
-            "App-pkg",
+            "pkg",
             "Download/PrismSpace/",
+            previous = listOf(PublishedApk("old-base", ""), PublishedApk("old-split", "")),
         )
 
-        assertEquals("new-0", first)
-        assertEquals(listOf("App-pkg.apk", "App-pkg.split1.apk"), store.published.map { it.canonicalName })
-        assertEquals(listOf("old"), store.replacedPrevious.map { it.uri })
+        assertEquals(listOf("new-0", "new-1"), published)
+        assertEquals(listOf("pkg.apk", "pkg.split1.apk"), store.published.map { it.canonicalName })
+        assertEquals(listOf("old-base", "old-split"), store.replacedPrevious.map { it.uri })
         assertTrue(store.aborted.isEmpty())
     }
 
-    @Test fun stablePackageNamespaceAlsoRemovesCurrentLegacyLabelNamespace() {
-        val store = RecordingStoreByBase(
-            mapOf(
-                "pkg" to listOf(PublishedApk("canonical-old", "pkg.apk")),
-                "Label-pkg" to listOf(PublishedApk("legacy-old", "Label-pkg.apk")),
-            ),
-        )
+    @Test fun sameNamePlainFileOutsideTheLedgerSuiteIsNeverDeleted() {
+        // A user-transferred "pkg.apk" lives in the same folder but was never part of a published
+        // suite: the caller's previous list (from the ledger) does not contain it, so it survives.
+        val store = RecordingStore(folder = listOf(PublishedApk("user-file", "pkg.apk")))
+        ApkSuitePublisher(store) { "fixed" }.replace(listOf("/base.apk"), "pkg", "Download/PrismSpace/", previous = emptyList())
 
+        assertTrue(store.replacedPrevious.isEmpty())
+        assertEquals(listOf("user-file"), store.folder.map { it.uri })
+    }
+
+    @Test fun duplicatePreviousUrisAreDeletedOnce() {
+        val store = RecordingStore()
         ApkSuitePublisher(store) { "fixed" }.replace(
             listOf("/base.apk"),
             "pkg",
             "Download/PrismSpace/",
-            previousSafeBases = setOf("pkg", "Label-pkg"),
+            previous = listOf(PublishedApk("old", ""), PublishedApk("old", "")),
         )
 
-        assertEquals(setOf("canonical-old", "legacy-old"), store.replaced.map(PublishedApk::uri).toSet())
+        assertEquals(listOf("old"), store.replacedPrevious.map { it.uri })
     }
 
     @Test fun copyFailureAbortsOnlyNewRowsAndNeverPublishesOverPreviousSuite() {
-        val store = RecordingStore(
-            previous = listOf(PublishedApk("old", "App-pkg.apk")),
-            failStageIndex = 1,
-        )
+        val store = RecordingStore(failStageIndex = 1)
 
         runCatching {
             ApkSuitePublisher(store) { "fixed" }.replace(
                 listOf("/base.apk", "/split.apk"),
-                "App-pkg",
+                "pkg",
                 "Download/PrismSpace/",
+                previous = listOf(PublishedApk("old", "")),
             )
         }
 
         assertEquals(listOf("new-0"), store.aborted.map { it.uri })
         assertTrue(store.published.isEmpty())
-        assertEquals(listOf("old"), store.previous.map { it.uri })
+        assertTrue(store.replacedPrevious.isEmpty())
     }
 
     @Test fun atomicPublishFailureCleansNewRowsAndLeavesPreviousSuiteToProviderTransaction() {
-        val store = RecordingStore(
-            previous = listOf(PublishedApk("old", "App-pkg.apk")),
-            failPublish = true,
-        )
+        val store = RecordingStore(failPublish = true)
 
         runCatching {
-            ApkSuitePublisher(store) { "fixed" }.replace(listOf("/base.apk"), "App-pkg", "Download/PrismSpace/")
+            ApkSuitePublisher(store) { "fixed" }.replace(
+                listOf("/base.apk"),
+                "pkg",
+                "Download/PrismSpace/",
+                previous = listOf(PublishedApk("old", "")),
+            )
         }
 
         assertEquals(listOf("new-0"), store.aborted.map { it.uri })
-        assertEquals(listOf("old"), store.previous.map { it.uri })
+        assertTrue(store.replacedPrevious.isEmpty())
     }
 
     private class RecordingStore(
-        val previous: List<PublishedApk>,
+        val folder: List<PublishedApk> = emptyList(),
         private val failStageIndex: Int? = null,
         private val failPublish: Boolean = false,
     ) : ApkSuiteStore {
@@ -100,8 +97,6 @@ class ApkSuitePublisherTest {
             return StagedApk("new-${staged.size}", canonicalName).also(staged::add)
         }
 
-        override fun existingFor(safeBase: String, relativePath: String) = previous
-
         override fun replaceAtomically(previous: List<PublishedApk>, staged: List<StagedApk>) {
             if (failPublish) error("publish failed")
             replacedPrevious = previous
@@ -109,16 +104,5 @@ class ApkSuitePublisherTest {
         }
 
         override fun abort(staged: StagedApk) { aborted += staged }
-    }
-
-    private class RecordingStoreByBase(
-        private val rows: Map<String, List<PublishedApk>>,
-    ) : ApkSuiteStore {
-        var replaced = emptyList<PublishedApk>()
-        override fun stage(sourcePath: String, pendingName: String, canonicalName: String, relativePath: String) =
-            StagedApk("new", canonicalName)
-        override fun existingFor(safeBase: String, relativePath: String) = rows[safeBase].orEmpty()
-        override fun replaceAtomically(previous: List<PublishedApk>, staged: List<StagedApk>) { replaced = previous }
-        override fun abort(staged: StagedApk) = Unit
     }
 }

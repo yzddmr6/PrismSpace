@@ -17,6 +17,7 @@ import com.yzddmr6.prismspace.analytics.DiagnosticLog
 import android.widget.Toast
 import com.yzddmr6.prismspace.mobile.R
 import com.yzddmr6.prismspace.prism.service.FileTransferPolicy
+import com.yzddmr6.prismspace.prism.transfer.TransferLedger
 import com.yzddmr6.prismspace.util.PrismLocale
 import com.yzddmr6.prismspace.bridge.Bridge
 import com.yzddmr6.prismspace.bridge.BridgeTargets
@@ -74,9 +75,9 @@ object ProfileApkInstaller {
     @Volatile private var refusedApk: Uri? = null
     @Volatile private var refusedPackage: String? = null
 
-    /** True when the copied base/split APK files for this transfer record still exist in Download/PrismSpace. */
+    /** True when the copied base/split APK files for this package still exist in this space. */
     fun hasCopiedApkSet(context: Context, pkg: String, label: String): Boolean =
-        queryApkSet(context.applicationContext, safeBases(label, pkg)).isNotEmpty()
+        copiedApkSet(context.applicationContext, pkg, label).isNotEmpty()
 
     /**
      * Install the copied APK set for [pkg] cloned under [label]. The clone wrote files named
@@ -101,9 +102,8 @@ object ProfileApkInstaller {
             Toast.makeText(context, loc.getString(R.string.lz_pf_install_need_perm), Toast.LENGTH_LONG).show()
             return
         }
-        val safeBases = safeBases(label, pkg)
-        val safeBase = safeBases.first()
-        val uris = queryApkSet(appCtx, safeBases)
+        val safeBase = safeBases(label, pkg).first()
+        val uris = copiedApkSet(appCtx, pkg, label)
         if (uris.isEmpty()) {
             DiagnosticLog.w(TAG, "profile apk install has no copied apk set pkg=$pkg safeBase=$safeBase")
             Toast.makeText(context, loc.getString(R.string.lz_pf_install_no_apk), Toast.LENGTH_LONG).show(); return
@@ -145,6 +145,26 @@ object ProfileApkInstaller {
             }
         }.start()
     }
+
+    /**
+     * The suite to install: the URIs the ledger recorded when this suite was published (every one must
+     * still exist — a partial split set cannot install). Only without a ledger suite (cloned by an
+     * older version) does it fall back to the exact canonical file names, read-only.
+     */
+    private fun copiedApkSet(context: Context, pkg: String, label: String): List<Uri> {
+        val recorded = runCatching { TransferLedger.apkSuite(context, pkg)?.apkUris.orEmpty() }.getOrDefault(emptyList())
+        if (recorded.isNotEmpty()) {
+            val uris = recorded.map(Uri::parse)
+            val complete = uris.all { exists(context, it) }
+            DiagnosticLog.i(TAG, "profile apk set from ledger pkg=$pkg files=${uris.size} complete=$complete")
+            return if (complete) uris else emptyList()
+        }
+        return queryApkSet(context, safeBases(label, pkg))
+    }
+
+    private fun exists(context: Context, uri: Uri): Boolean = runCatching {
+        context.contentResolver.query(uri, arrayOf(MediaStore.MediaColumns._ID), null, null, null)?.use { it.moveToFirst() } == true
+    }.getOrDefault(false)
 
     /** base + splits in Download/PrismSpace named exactly "<base>.apk" / "<base>.splitN.apk" (no MediaStore "(1)" dupes). */
     private fun queryApkSet(context: Context, safeBases: List<String>): List<Uri> {
