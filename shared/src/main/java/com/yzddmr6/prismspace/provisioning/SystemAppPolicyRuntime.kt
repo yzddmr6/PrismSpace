@@ -17,7 +17,12 @@ import com.yzddmr6.prismspace.util.Users
 
 enum class ConvergeReason { Provision, Repair, Incremental, Selection }
 
-enum class PackageOutcome { Ok, Unchanged, Absent, Failed }
+/**
+ * [HiddenOnly]: an unavailable target whose hide took effect while the platform refused the suspend
+ * (HyperOS refuses it for contacts, which also carries the dialer [推测: protected role]). Hidden
+ * already takes the app out of the space, so it counts as applied and is not retried every pass.
+ */
+enum class PackageOutcome { Ok, Unchanged, Absent, Failed, HiddenOnly }
 
 data class PackageResult(val target: SystemAppTarget, val outcome: PackageOutcome)
 
@@ -229,13 +234,14 @@ internal class SystemAppPolicyEngine(
         val report = ApplyReport(results, applied, skippedUnchanged = targets.size - candidates.size)
         log("policy_summary u=$userId applied=$applied skippedUnchanged=${report.skippedUnchanged}" +
             " absent=${report.count(PackageOutcome.Absent)} failed=${report.count(PackageOutcome.Failed)}" +
+            " hiddenOnly=${report.count(PackageOutcome.HiddenOnly)}" +
             " ms=${(clock() - started).coerceAtLeast(0)}")
         return report
     }
 
     private fun execute(plan: PackagePlan, target: TargetState, quiet: Boolean): PackageOutcome {
         val executed = ArrayList<SystemAppStep>()
-        val outcome = try {
+        val attempted = try {
             runSteps(plan.pkg, plan.steps, executed) ?: verify(plan, target, executed)
         } catch (e: IllegalArgumentException) {
             PackageOutcome.Absent      // Package vanished or is not a system package of the parent user.
@@ -243,10 +249,13 @@ internal class SystemAppPolicyEngine(
             log("policy_step_error pkg=${plan.pkg} exception=${e.javaClass.simpleName}")
             PackageOutcome.Failed
         }
+        val outcome = if (attempted == PackageOutcome.Failed && target == TargetState.UNAVAILABLE &&
+                safeState(plan.pkg)?.let { it.installed && it.hidden } == true) PackageOutcome.HiddenOnly else attempted
         val from = plan.from?.let { "${it.installed.bit()},${it.hidden.bit()},${it.suspended.bit()}" } ?: "-"
         val result = when (outcome) {
             PackageOutcome.Ok, PackageOutcome.Unchanged -> "ok"
             PackageOutcome.Absent -> "absent"
+            PackageOutcome.HiddenOnly -> "hidden_only"
             PackageOutcome.Failed -> "failed:${executed.lastOrNull() ?: plan.steps.first()}"
         }
         if (!(quiet && outcome == PackageOutcome.Absent))

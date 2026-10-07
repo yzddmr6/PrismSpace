@@ -18,6 +18,8 @@ class SystemAppPolicyRuntimeTest {
         val device: MutableMap<String, PackageState>,
         /** Packages the parent user carries as system packages, i.e. enableSystemApp can install them. */
         private val enableable: Set<String>,
+        /** Packages the platform refuses to suspend (HyperOS contacts). */
+        private val unsuspendable: Set<String> = emptySet(),
     ) : SystemAppStatePort {
         var writes = 0
         override fun state(pkg: String) = device[pkg]
@@ -31,7 +33,9 @@ class SystemAppPolicyRuntimeTest {
             writes++; device[pkg] = device.getValue(pkg).copy(hidden = hidden); return true
         }
         override fun setSuspended(pkg: String, suspended: Boolean): Boolean {
-            writes++; device[pkg] = device.getValue(pkg).copy(suspended = suspended); return true
+            writes++
+            if (suspended && pkg in unsuspendable) return false
+            device[pkg] = device.getValue(pkg).copy(suspended = suspended); return true
         }
     }
 
@@ -239,6 +243,27 @@ class SystemAppPolicyRuntimeTest {
         entryActions = mapOf(SETTINGS to "android.settings.SETTINGS")
         val snapshot = engine(FakePort(freshDevice(), system), InMemorySystemAppPolicyPersistence()).listSnapshot(0)
         assertEquals("android.settings.SETTINGS", snapshot.entryActions[SETTINGS])
+    }
+
+    @Test fun refusedSuspendIsAppliedAsHiddenOnlyAndNotRetried() {
+        val port = FakePort(freshDevice(), system, unsuspendable = setOf(CONTACTS))
+        val store = InMemorySystemAppPolicyPersistence()
+        engine(port, store).converge(ConvergeReason.Provision, 0)
+        assertEquals(PackageState(installed = true, hidden = true, suspended = false), port.device[CONTACTS])
+        assertTrue(logs.any { it.startsWith("policy_step pkg=$CONTACTS") && it.endsWith("result=hidden_only") })
+        assertTrue(logs.none { it.contains("result=failed") })
+        assertEquals(SystemAppTarget.Unavailable, store.read().lastApplied[CONTACTS])
+
+        logs.clear(); port.writes = 0
+        engine(port, store).converge(ConvergeReason.Incremental, 12)
+        assertEquals(0, port.writes)                          // Not retried on every pass.
+        assertTrue(logs.none { it.startsWith("policy_step pkg=$CONTACTS") })
+
+        // A user removal reports the package as unavailable, not failed.
+        engine(port, store).applySelection(listOf(SystemAppOverrideChange(CONTACTS, SystemAppChoice.Enabled)), null, 12)
+        val report = engine(port, store).applySelection(listOf(SystemAppOverrideChange(CONTACTS, SystemAppChoice.Disabled)), null, 12)
+        assertEquals(listOf(CONTACTS), report.unavailable)
+        assertTrue(report.failed.isEmpty())
     }
 
     @Test fun selectionChangesAreBounded() {
