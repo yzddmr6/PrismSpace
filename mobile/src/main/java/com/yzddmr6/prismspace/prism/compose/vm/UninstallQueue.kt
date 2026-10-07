@@ -69,9 +69,6 @@ internal data class UninstallSummary(val succeeded: Int, val cancelled: Int, val
     val failed: Int get() = cancelled + timedOut
 }
 
-internal fun shouldClearCloneRegistry(status: UninstallOutcomeStatus): Boolean =
-    status == UninstallOutcomeStatus.Success
-
 internal object UninstallQueueReducer {
 
     fun start(requests: List<UninstallRequest>): UninstallQueueState {

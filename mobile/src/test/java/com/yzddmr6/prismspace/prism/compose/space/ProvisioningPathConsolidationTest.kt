@@ -150,11 +150,21 @@ class ProvisioningPathConsolidationTest {
             settingsScreen.contains("vm.deleteDualSpace("))
         assertTrue("Settings deletion must pass the real clone count into the warning",
             settingsScreen.contains("cloneCount ="))
-        // 删除成功后：克隆注册表与待安装标记都必须清除（待安装任务指向已删除的空间）。
+        // 删除成功后：待安装标记必须清除（待安装任务指向已删除的空间）；「已双开」只由 profile 侧事实推导，
+        // 主空间不再有克隆登记表需要清理。
         val settingsVm = File("src/main/java/com/yzddmr6/prismspace/prism/compose/vm/SettingsViewModel.kt").readText()
         val successBlock = settingsVm.substringAfter("DeleteSpaceResult.Success").substringBefore("setFeedback(fb.message")
-        assertTrue(successBlock.contains("UserCloneRegistry.clear"))
+        assertFalse(successBlock.contains("UserCloneRegistry"))
         assertTrue(successBlock.contains("ClonePreparationStore.clear"))
+    }
+
+    @Test fun `main space keeps no clone registry`() {
+        val offenders = File("src/main").walkTopDown()
+            .filter { it.isFile && it.extension in setOf("kt", "java") }
+            .filter { it.readText().contains("UserCloneRegistry") }
+            .map { it.name }.toList()
+        assertEquals(emptyList<String>(), offenders)
+        assertFalse(File("src/main/java/com/yzddmr6/prismspace/controller/UserCloneRegistry.kt").exists())
     }
 
     @Test fun `profile wipe has exactly one implementation`() {

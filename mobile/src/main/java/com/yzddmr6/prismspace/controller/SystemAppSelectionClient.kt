@@ -101,13 +101,12 @@ internal object SystemAppSelectionClient {
     }
 
     /**
-     * Mirrors a policy report into the main space: the list provider's policy cache and the explicit
-     * system-clone markers (only for packages the user chose, see [UserCloneRegistry]).
+     * Mirrors a policy report into the main-space list cache until the next profile snapshot. Only
+     * packages the user chose count as enabled clones; the profile side stays the single truth.
      */
     fun record(context: Context, userId: Int, report: SystemAppApplyReportDto, chosen: Set<String>) {
-        report.available.filter { it in chosen }.forEach { UserCloneRegistry.add(context, it) }
-        report.unavailable.forEach { UserCloneRegistry.remove(context, it) }
-        PrismAppListProvider.getInstance(context).applyPolicyResult(UserHandles.of(userId), report.available, report.unavailable)
+        PrismAppListProvider.getInstance(context).applyPolicyResult(
+            UserHandles.of(userId), report.available, report.unavailable, report.available.filter { it in chosen })
     }
 
     @Suppress("UNCHECKED_CAST")

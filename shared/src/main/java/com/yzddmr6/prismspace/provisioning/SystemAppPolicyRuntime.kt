@@ -40,6 +40,8 @@ data class SystemAppListSnapshot(
     val policyHidden: Set<String>,
     val enabledLauncherPackages: Set<String>,
     val entryActions: Map<String, String> = emptyMap(),
+    /** Targeted Available by the user's selection or the confirmed default set; critical excluded. */
+    val policyEnabled: Set<String> = emptySet(),
 ) {
     companion object { val EMPTY = SystemAppListSnapshot(emptySet(), emptySet()) }
 }
@@ -153,8 +155,12 @@ internal class SystemAppPolicyEngine(
         val stored = persistence.read()
         val collected = facts(stored.overrides.keys + SystemAppDefaults.packages)
         val state = ensureInitialized(stored, collected, provisionState)
-        val hidden = evaluate(state, collected).filterValues { it.kind() == SystemAppTarget.Unavailable }.keys
-        return SystemAppListSnapshot(hidden, collected.enabledLauncherPackages, collected.entryActions)
+        val targets = evaluate(state, collected)
+        val hidden = targets.filterValues { it.kind() == SystemAppTarget.Unavailable }.keys
+        // R5/R6: available because of the user's selection (explicit or confirmed default). Critical
+        // packages (R1) are infrastructure kept by the platform invariant, never a user's clone.
+        val enabled = targets.filter { (pkg, target) -> target.kind() == SystemAppTarget.Available && pkg !in collected.critical }.keys
+        return SystemAppListSnapshot(hidden, collected.enabledLauncherPackages, collected.entryActions, enabled)
     }
 
     private fun evaluate(state: SystemAppPolicyState, collected: SystemAppFacts) = SystemAppPolicy.evaluate(PolicyInputs(

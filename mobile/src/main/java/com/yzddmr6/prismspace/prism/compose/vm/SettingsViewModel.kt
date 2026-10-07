@@ -14,7 +14,7 @@ import com.yzddmr6.prismspace.analytics.DiagnosticSection
 import com.yzddmr6.prismspace.bridge.BridgeTargets
 import com.yzddmr6.prismspace.controller.ClonePreparationStore
 import com.yzddmr6.prismspace.controller.PrismAppControl
-import com.yzddmr6.prismspace.controller.UserCloneRegistry
+import com.yzddmr6.prismspace.prism.compose.space.countsAsUserClone
 import com.yzddmr6.prismspace.mobile.R
 import com.yzddmr6.prismspace.prism.compose.component.PrismLevel
 import com.yzddmr6.prismspace.prism.compose.space.BridgeHealthRepository
@@ -360,13 +360,10 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
                     // suspend, and (b) PrismSpace itself — the profile owner can't suspend
                     // its own admin package.
                     val self = context.packageName
-                    // Operate on the user's 分身 only — same definition as the Space tab / count
-                    // third-party clones, plus system apps the user explicitly cloned.
+                    // Operate on the user's 分身 only — same definition as the Space tab / count:
+                    // third-party clones plus system apps the profile policy enables by choice.
                     val apps = spaceRepo.installedApps(dual)
-                        .filter {
-                            it.isInstalled && it.packageName != self &&
-                                (!it.isSystem || UserCloneRegistry.contains(context, it.packageName))
-                        }
+                        .filter { it.countsAsUserClone(self) }
                         .toList()
                     if (apps.isEmpty()) return@withContext SuspendResult.NoApps
                     // 冻结整个空间 uses the same profile-owner freeze path as per-app 冻结,
@@ -606,7 +603,6 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             )
             val fb = provisioningFeedback(result, res)
             if (result == DeleteSpaceResult.Success) {
-                UserCloneRegistry.clear(getApplication())
                 // Pending-install markers target a space that no longer exists — clear them so the
                 // home todo card and the main-space rows stop offering 待安装 for a deleted space.
                 ClonePreparationStore.clear(getApplication())
@@ -739,10 +735,9 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             val self = context.packageName
             spaceRepo.dualSpaces().sumOf { d ->
                 runCatching {
-                    // Same counting rule as Home: user apps and explicitly added system clones.
+                    // Same counting rule as Home: user apps and system apps enabled by choice.
                     spaceRepo.installedApps(d).count { app ->
-                        app.isInstalled && app.shouldShowAsEnabled() && app.packageName != self &&
-                            (!app.isSystem || UserCloneRegistry.contains(context, app.packageName))
+                        app.shouldShowAsEnabled() && app.countsAsUserClone(self)
                     }
                 }.getOrElse { 0 }
             }
@@ -766,10 +761,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             val dual = spaceRepo.dualSpace() ?: return@runCatching SpaceFreezeState.Unknown
             val self = context.packageName
             val facts = spaceRepo.installedApps(dual)
-                .filter {
-                    it.isInstalled && it.packageName != self &&
-                        (!it.isSystem || UserCloneRegistry.contains(context, it.packageName))
-                }
+                .filter { it.countsAsUserClone(self) }
                 .map { AppFreezeFact(it.isHidden, it.isSuspended) }
             aggregateSpaceFreeze(facts)
         }.getOrElse {

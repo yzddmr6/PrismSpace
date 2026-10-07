@@ -56,18 +56,23 @@ class SpaceUiStateTest {
     }
 
     @Test
-    fun `system package presence alone is not an explicit clone`() {
-        assertEquals(false, mainAppIsCloned(isSystem = true, installedInDual = true, systemCloneMarked = false))
+    fun `system package presence alone is not a clone`() {
+        assertEquals(false, mainAppIsCloned(isSystem = true, installedInDual = true, policyEnabledInDual = false))
     }
 
     @Test
-    fun `explicitly marked system package is cloned`() {
-        assertEquals(true, mainAppIsCloned(isSystem = true, installedInDual = true, systemCloneMarked = true))
+    fun `system package the dual policy enables by choice is cloned`() {
+        assertEquals(true, mainAppIsCloned(isSystem = true, installedInDual = true, policyEnabledInDual = true))
+    }
+
+    @Test
+    fun `policy enabled but not installed in dual is not cloned`() {
+        assertEquals(false, mainAppIsCloned(isSystem = true, installedInDual = false, policyEnabledInDual = true))
     }
 
     @Test
     fun `third party clone follows dual installation fact`() {
-        assertEquals(true, mainAppIsCloned(isSystem = false, installedInDual = true, systemCloneMarked = false))
-        assertEquals(false, mainAppIsCloned(isSystem = false, installedInDual = false, systemCloneMarked = true))
+        assertEquals(true, mainAppIsCloned(isSystem = false, installedInDual = true, policyEnabledInDual = false))
+        assertEquals(false, mainAppIsCloned(isSystem = false, installedInDual = false, policyEnabledInDual = true))
     }
 }

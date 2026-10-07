@@ -82,6 +82,9 @@ data class ProfileAppEntry(
     val policyHidden: Boolean = false,
     /** Action that opens the package's UI inside the profile when it has no launcher entry. */
     val entryAction: String? = null,
+    /** The system app policy makes this package available by the user's selection or the confirmed
+     *  default set; critical packages are excluded. Third-party packages are always false. */
+    val policyEnabled: Boolean = false,
 ) : Parcelable
 
 @Parcelize

@@ -18,13 +18,13 @@ import com.yzddmr6.prismspace.controller.PrismAppClones
 import com.yzddmr6.prismspace.controller.PrismAppControl
 import com.yzddmr6.prismspace.controller.ClonePreparationStore
 import com.yzddmr6.prismspace.controller.SystemAppSelectionClient
-import com.yzddmr6.prismspace.controller.UserCloneRegistry
 import com.yzddmr6.prismspace.prism.service.ProfileBridgeResult
 import com.yzddmr6.prismspace.prism.service.profileBridgeFailureMessage
 import com.yzddmr6.prismspace.data.PrismAppListProvider
 import com.yzddmr6.prismspace.engine.LaunchResult
 import com.yzddmr6.prismspace.prism.compose.space.PrismSpace
 import com.yzddmr6.prismspace.prism.compose.space.PrismSpaceKind
+import com.yzddmr6.prismspace.prism.compose.space.isUserClone
 import com.yzddmr6.prismspace.prism.compose.space.resolveSpaceSelection
 import com.yzddmr6.prismspace.prism.compose.space.SpaceRepository
 import com.yzddmr6.prismspace.prism.compose.space.SpaceRepositoryProvider
@@ -85,6 +85,8 @@ internal data class SpaceAppInput(
     val policyHidden: Boolean = false,
     /** Dual segment: opened through this action inside the profile (no launcher entry). */
     val entryAction: String? = null,
+    /** Dual segment: a system package the space's policy makes available by the user's choice. */
+    val policyEnabled: Boolean = false,
 )
 
 /** The row's single next-step action rendered as its inline button; null = no action row button. */
@@ -214,9 +216,9 @@ internal fun mapRows(inputs: List<SpaceAppInput>, res: StringResolver): List<Spa
     )
 }
 
-/** System packages exist in managed profiles for platform reasons; only an explicit marker makes one a user clone. */
-internal fun mainAppIsCloned(isSystem: Boolean, installedInDual: Boolean, systemCloneMarked: Boolean): Boolean =
-    if (isSystem) systemCloneMarked else installedInDual
+/** A main-space app is cloned when the dual space holds it as the user's clone (profile-side facts). */
+internal fun mainAppIsCloned(isSystem: Boolean, installedInDual: Boolean, policyEnabledInDual: Boolean): Boolean =
+    installedInDual && isUserClone(isSystem, policyEnabledInDual)
 
 /**
  * The system-app view is intentionally search-first: a managed profile can contain hundreds of
@@ -415,7 +417,7 @@ class SpaceViewModel(app: Application, private val savedState: SavedStateHandle)
     private data class ProjectionInput(
         val normal: List<SpaceAppInput>, val system: List<SpaceAppInput>, val options: SpaceBrowseOptions,
         val targetPackages: Set<String>?, val hasTarget: Boolean, val pending: Set<String>,
-        val marked: Set<String>, val locale: Locale,
+        val targetEnabled: Set<String>?, val locale: Locale,
     )
     private var projections: Map<String, Pair<ProjectionInput, SpaceView>> = emptyMap()
     private var projectionVersion = 0
@@ -546,16 +548,16 @@ class SpaceViewModel(app: Application, private val savedState: SavedStateHandle)
                     val res = prismResolver(context)
                     val targetApps = source[target]?.apps?.keys
                     val pending = ClonePreparationStore.pendingPackages(context)
-                    val marked = UserCloneRegistry.packages(context)
+                    val targetEnabled = source[target]?.system?.filter { it.policyEnabled }?.mapTo(HashSet()) { it.pkg }
                     source.mapValues { (id, apps) ->
                         val options = browsing[id] ?: SpaceBrowseOptions()
                         val key = ProjectionInput(apps.normal, apps.system, options,
                             if (id == "main") targetApps else null, target != null,
-                            if (id == "main") pending else emptySet(), marked, locale)
+                            if (id == "main") pending else emptySet(), if (id == "main") targetEnabled else null, locale)
                         previous[id]?.takeIf { it.first == key } ?: run {
                             val inputs = if (id == "main") apps.normal.map { input ->
                                 input.copy(
-                                    cloned = mainAppIsCloned(input.system, input.pkg in targetApps.orEmpty(), input.pkg in marked),
+                                    cloned = mainAppIsCloned(input.system, input.pkg in targetApps.orEmpty(), input.pkg in targetEnabled.orEmpty()),
                                     prepared = input.pkg in pending && input.pkg !in targetApps.orEmpty(),
                                     cloneStateKnown = target == null || targetApps != null,
                                 )
@@ -1042,9 +1044,6 @@ class SpaceViewModel(app: Application, private val savedState: SavedStateHandle)
         val outcome = next.outcomes.lastOrNull()
         if (outcome != null) DiagnosticLog.i(TAG,
             "uninstall verified pkg=${outcome.request.packageName} targetUser=${outcome.request.targetUserId} status=${outcome.status}")
-        if (outcome != null && shouldClearCloneRegistry(outcome.status)) {
-            withContext(Dispatchers.IO) { UserCloneRegistry.remove(getApplication(), outcome.request.packageName) }
-        }
         if (outcome?.mainCopyLost == true) {
             DiagnosticLog.w(
                 TAG,
@@ -1150,6 +1149,7 @@ class SpaceViewModel(app: Application, private val savedState: SavedStateHandle)
                 launchability = launchability,
                 policyHidden = segment == SpaceSegment.Dual && app.isHiddenSysPrismAppTreatedAsDisabled,
                 entryAction = if (segment == SpaceSegment.Dual) dualEntryAction(app) else null,
+                policyEnabled = segment == SpaceSegment.Dual && app.isPolicyEnabled,
             )
         }
         val normal = apps.filter { app ->

@@ -18,6 +18,7 @@ import androidx.fragment.app.FragmentActivity;
 
 import com.yzddmr6.prismspace.analytics.Analytics;
 import com.yzddmr6.prismspace.analytics.Analytics.Property;
+import com.yzddmr6.prismspace.controller.LegacyClonePrefs;
 import com.yzddmr6.prismspace.mobile.BuildConfig;
 import com.yzddmr6.prismspace.mobile.R;
 import com.yzddmr6.prismspace.prism.compose.host.PrismComposeHostFragment;
@@ -62,6 +63,7 @@ public class MainActivity extends FragmentActivity {
 	}
 
 	private void continueParentStartup(final Bundle savedInstanceState) {
+		new Thread(() -> LegacyClonePrefs.INSTANCE.purge(getApplicationContext()), "Prism-housekeeping").start();
 		if (mIsDeviceOwner) {
 			startMainUi(savedInstanceState);	// As device owner, always show main UI.
 			return;

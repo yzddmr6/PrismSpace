@@ -139,6 +139,7 @@ class PrismAppListProvider : AppListProvider<PrismAppInfo>() {
 					snapshotsByPackage = entries.associateBy(ProfileAppEntry::packageName)
 					// Policy state is profile-side truth; the parent only caches it per snapshot.
 					mPolicyHidden[profile] = entries.filter(ProfileAppEntry::policyHidden).mapTo(HashSet(), ProfileAppEntry::packageName)
+					mPolicyEnabled[profile] = entries.filter(ProfileAppEntry::policyEnabled).mapTo(HashSet(), ProfileAppEntry::packageName)
 					mLauncherEntries[profile] = entries.filter(ProfileAppEntry::launcherEntry).mapTo(HashSet(), ProfileAppEntry::packageName)
 					mEntryActions[profile] = entries.mapNotNull { e -> e.entryAction?.let { e.packageName to it } }.toMap()
 				}?.asSequence()?.map(ProfileAppEntry::toApplicationInfo)
@@ -231,15 +232,24 @@ class PrismAppListProvider : AppListProvider<PrismAppInfo>() {
 	/** Whether the profile-side system app policy targets [pkg] as unavailable in [profile]. */
 	fun isPolicyHidden(profile: UserHandle, pkg: String): Boolean = mPolicyHidden[profile]?.contains(pkg) == true
 
+	/** Whether the profile-side policy makes [pkg] available by the user's choice (the user's 分身). */
+	fun isPolicyEnabled(profile: UserHandle, pkg: String): Boolean = mPolicyEnabled[profile]?.contains(pkg) == true
+
 	/** Enabled launcher entry from the last profile snapshot; null when no snapshot covers [profile]. */
 	fun snapshotLauncherEntry(profile: UserHandle, pkg: String): Boolean? = mLauncherEntries[profile]?.contains(pkg)
 
 	/** Profile-side action that opens [pkg]'s UI when it has no launcher entry (e.g. HyperOS Settings). */
 	fun snapshotEntryAction(profile: UserHandle, pkg: String): String? = mEntryActions[profile]?.get(pkg)
 
-	/** Records the outcome of a system app policy change, then re-reads the touched packages. */
-	fun applyPolicyResult(profile: UserHandle, available: Collection<String>, unavailable: Collection<String>) {
+	/**
+	 * Mirrors the outcome of a system app policy change until the next profile snapshot replaces it,
+	 * then re-reads the touched packages. [enabledByChoice] is the subset of [available] the caller
+	 * chose; critical packages may be reported available but are never the user's clone.
+	 */
+	fun applyPolicyResult(profile: UserHandle, available: Collection<String>, unavailable: Collection<String>,
+			enabledByChoice: Collection<String>) {
 		mPolicyHidden.compute(profile) { _, current -> (current.orEmpty() - available.toSet() + unavailable).toHashSet() }
+		mPolicyEnabled.compute(profile) { _, current -> (current.orEmpty() - unavailable.toSet() + enabledByChoice).toHashSet() }
 		(available + unavailable).forEach { pkg -> refreshPackage(pkg, profile, false) }
 	}
 
@@ -292,6 +302,7 @@ class PrismAppListProvider : AppListProvider<PrismAppInfo>() {
 	private val mPrismAppMap by lazy { initializeMonitor(); ArrayMap<UserHandle, MutableMap<String, PrismAppInfo>>() }
 	private val mLauncherApps by lazy { context().getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps }
 	private val mPolicyHidden = ConcurrentHashMap<UserHandle, Set<String>>()
+	private val mPolicyEnabled = ConcurrentHashMap<UserHandle, Set<String>>()
 	private val mLauncherEntries = ConcurrentHashMap<UserHandle, Set<String>>()
 	private val mEntryActions = ConcurrentHashMap<UserHandle, Map<String, String>>()
 	private val mCriticalSystemPackages by lazy { SystemAppsManager.detectCriticalSystemPackages(context().packageManager) }
@@ -352,6 +363,7 @@ internal object MobileAppListPort : AppListPort {
             launcherEntry = packageName in policy.enabledLauncherPackages,
             policyHidden = packageName in policy.policyHidden,
             entryAction = policy.entryActions[packageName],
+            policyEnabled = packageName in policy.policyEnabled,
         )
     }
 }

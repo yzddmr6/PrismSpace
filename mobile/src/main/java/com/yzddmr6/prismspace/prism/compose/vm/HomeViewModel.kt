@@ -4,10 +4,10 @@ import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.yzddmr6.prismspace.prism.compose.space.countsAsUserClone
 import com.yzddmr6.prismspace.analytics.CrashMarker
 import com.yzddmr6.prismspace.analytics.DiagnosticLog
 import com.yzddmr6.prismspace.controller.ClonePreparationStore
-import com.yzddmr6.prismspace.controller.UserCloneRegistry
 import com.yzddmr6.prismspace.prism.compose.component.PrismLevel
 import com.yzddmr6.prismspace.prism.compose.space.SpaceRepository
 import com.yzddmr6.prismspace.prism.compose.space.SpaceRepositoryProvider
@@ -377,9 +377,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             }.getOrElse { emptyList() }
         } else emptyList()
         val userClones = dualApps.filter { app ->
-            app.isInstalled && app.shouldShowAsEnabled() && app.packageName != context.packageName &&
-                // Count user apps and explicitly added system clones, not provisioned system tools.
-                (!app.isSystem || UserCloneRegistry.contains(context, app.packageName))
+            // Count user apps and system apps the profile policy enables by choice, not provisioned tools.
+            app.shouldShowAsEnabled() && app.countsAsUserClone(context.packageName)
         }
         val cloneCount = userClones.size
         val overviewClones = userClones.sortedBy { it.label.toString().lowercase() }.take(5)

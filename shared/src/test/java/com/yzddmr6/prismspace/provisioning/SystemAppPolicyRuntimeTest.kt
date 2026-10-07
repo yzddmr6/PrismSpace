@@ -228,6 +228,23 @@ class SystemAppPolicyRuntimeTest {
         assertFalse(IME in snapshot.policyHidden)
     }
 
+    @Test fun listSnapshotPolicyEnabledIsTheUsersChoiceWithoutCriticalOrUnmanaged() {
+        val port = FakePort(freshDevice(), system)
+        val store = InMemorySystemAppPolicyPersistence()
+        engine(port, store).converge(ConvergeReason.Provision, 0)
+        assertTrue(engine(port, store).listSnapshot(12).policyEnabled.isEmpty())   // Pending: nothing chosen yet.
+        engine(port, store).applySelection(listOf(SystemAppOverrideChange(MMS, SystemAppChoice.Enabled)), SelectionFinish.Confirm, 12)
+        val snapshot = engine(port, store).listSnapshot(12)
+        assertTrue(MMS in snapshot.policyEnabled)          // R5 explicit override.
+        assertTrue(CAMERA in snapshot.policyEnabled)       // R6 confirmed default set.
+        assertFalse(SETTINGS in snapshot.policyEnabled)    // R1 critical: available but never a user clone.
+        assertFalse(GMS in snapshot.policyEnabled)
+        assertFalse(IME in snapshot.policyEnabled)         // R3 exempt: not managed.
+        assertFalse(PROVIDER in snapshot.policyEnabled)    // R8 no launcher entry, not chosen: not managed.
+        engine(port, store).applySelection(listOf(SystemAppOverrideChange(MMS, SystemAppChoice.Disabled)), null, 12)
+        assertFalse(MMS in engine(port, store).listSnapshot(12).policyEnabled)
+    }
+
     @Test fun absentCriticalPackageIsLoggedOnlyOnce() {
         val device = freshDevice().apply { remove(GMS) }      // A critical package this device does not have.
         val port = FakePort(device, system - GMS)

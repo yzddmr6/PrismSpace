@@ -9,7 +9,6 @@ import com.yzddmr6.prismspace.prism.compose.vm.UninstallQueueReducer
 import com.yzddmr6.prismspace.prism.compose.vm.UninstallQueueState
 import com.yzddmr6.prismspace.prism.compose.vm.UninstallRequest
 import com.yzddmr6.prismspace.prism.compose.vm.UninstallStage
-import com.yzddmr6.prismspace.prism.compose.vm.shouldClearCloneRegistry
 import com.yzddmr6.prismspace.prism.compose.vm.uninstallAbortFeedback
 import com.yzddmr6.prismspace.prism.compose.vm.uninstallQueueFeedback
 import org.junit.Assert.assertEquals
@@ -123,7 +122,7 @@ class UninstallQueueTest {
         assertEquals(UninstallStage.Verifying, state.current?.stage)
     }
 
-    @Test fun registryCleanupSignalExistsOnlyOnVerifiedSuccess() {
+    @Test fun verifiedSuccessAndCancelStayDistinctOutcomes() {
         var success = UninstallQueueReducer.start(listOf(request("ok")))
         success = UninstallQueueReducer.launched(success)
         success = UninstallQueueReducer.returned(success, 0)
@@ -136,8 +135,6 @@ class UninstallQueueTest {
 
         assertEquals(UninstallOutcomeStatus.Success, success.outcomes.single().status)
         assertEquals(UninstallOutcomeStatus.Cancelled, cancelled.outcomes.single().status)
-        assertTrue(shouldClearCloneRegistry(success.outcomes.single().status))
-        assertFalse(shouldClearCloneRegistry(cancelled.outcomes.single().status))
     }
 
     @Test fun summarySeparatesNotRemovedFromUnconfirmed() {
@@ -185,7 +182,6 @@ class UninstallQueueTest {
         )
 
         assertTrue(state.outcomes.single().mainCopyLost)
-        assertFalse(shouldClearCloneRegistry(state.outcomes.single().status))
     }
 
     @Test fun stubbedPortDrivesSerialQueueToCompletion() {

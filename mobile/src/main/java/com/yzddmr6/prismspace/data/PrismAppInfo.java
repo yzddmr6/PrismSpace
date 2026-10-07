@@ -50,6 +50,11 @@ public class PrismAppInfo extends AppInfo {
 		return ((PrismAppListProvider) mProvider).isPolicyHidden(user, packageName);
 	}
 
+	/** A system package the profile-side policy makes available by the user's choice (the user's 分身). */
+	public boolean isPolicyEnabled() {
+		return isSystem() && ((PrismAppListProvider) mProvider).isPolicyEnabled(user, packageName);
+	}
+
 	/** @return whether this package is critical to the system, thus should not be frozen or disabled. */
 	public boolean isCritical() {
 		return ((PrismAppListProvider) mProvider).isCritical(packageName);
