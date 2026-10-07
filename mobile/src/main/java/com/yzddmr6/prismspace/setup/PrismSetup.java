@@ -8,6 +8,7 @@ import android.app.ProgressDialog;
 import android.content.Intent;
 import android.provider.Settings;
 
+import com.yzddmr6.prismspace.prism.compose.nav.SystemAppPickerPrompt;
 import com.yzddmr6.prismspace.util.Dialogs;
 import com.yzddmr6.prismspace.analytics.Analytics;
 import com.yzddmr6.prismspace.mobile.R;
@@ -67,6 +68,9 @@ public class PrismSetup {
 		if (presentation.getOutcome() == RootSetupUiOutcome.Success) {
 			dismissProgress(progress);
 			Analytics.$().event("setup_prism_root_done").send();
+			// Ask which system apps to bring in; the profile-side status decides if it is still due.
+			SystemAppPickerPrompt.markExpected(activity,
+					result instanceof CreateSpaceResult.Success ? ((CreateSpaceResult.Success) result).getUserId() : null);
 			activity.finish();
 		} else if (presentation.getOutcome() == RootSetupUiOutcome.ExistingProfile) {
 			dismissProgress(progress);

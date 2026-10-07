@@ -9,6 +9,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.annotation.StringRes
 import androidx.lifecycle.lifecycleScope
+import com.yzddmr6.prismspace.prism.compose.nav.SystemAppPickerPrompt
 import com.yzddmr6.prismspace.MainActivity
 import com.yzddmr6.prismspace.analytics.DiagnosticLog
 import com.yzddmr6.prismspace.help.PrismHelp
@@ -221,6 +222,8 @@ class SetupController(
         ): Boolean {
             if (!vm.consumeProvisioningLaunched()) return false
             SpaceProvisioningTracker.markReturnedSuccess()
+            // Ask which system apps to bring in before Home; the profile-side status decides if it is still due.
+            SystemAppPickerPrompt.markExpected(activity, userId = null)
             DiagnosticLog.i(TAG, "Managed provisioning healthy reason=$reason; opening main activity")
             activity.startActivity(Intent(activity, MainActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)

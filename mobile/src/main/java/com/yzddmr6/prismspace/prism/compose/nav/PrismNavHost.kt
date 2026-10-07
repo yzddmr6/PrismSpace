@@ -17,16 +17,32 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.navArgument
+import com.yzddmr6.prismspace.analytics.DiagnosticLog
+import com.yzddmr6.prismspace.controller.SystemAppSelectionClient
 import com.yzddmr6.prismspace.prism.compose.screen.FilesScreen
 import com.yzddmr6.prismspace.prism.compose.screen.HomeScreen
 import com.yzddmr6.prismspace.prism.compose.screen.SettingsScreen
 import com.yzddmr6.prismspace.prism.compose.screen.SpaceScreen
+import com.yzddmr6.prismspace.prism.compose.screen.SystemAppPickerScreen
+import com.yzddmr6.prismspace.prism.compose.space.SpaceStateRepository
+import com.yzddmr6.prismspace.prism.compose.space.SpaceUsability
+import com.yzddmr6.prismspace.prism.compose.space.spaceUsabilityFromState
 import com.yzddmr6.prismspace.prism.compose.vm.AppFeedbackBus
+import com.yzddmr6.prismspace.prism.compose.vm.SystemAppPickerViewModel
+import com.yzddmr6.prismspace.prism.service.ProfileBridgeResult
+import com.yzddmr6.prismspace.provisioning.SelectionStatus
+import com.yzddmr6.prismspace.space.SpaceState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 /**
  * The ONE canonical "switch to a top-level tab" operation. Every entry point (the bottom bar AND any
@@ -41,6 +57,22 @@ fun NavHostController.navigateToTab(route: String) {
         restoreState = true
     }
 }
+
+/** Waits (bounded) for a usable dual space; [userId] null = whichever managed space becomes healthy. */
+private suspend fun awaitUsableSpace(context: android.content.Context, userId: Int?): Int? {
+    val repo = SpaceStateRepository(context)
+    repeat(SPACE_WAIT_ATTEMPTS) {
+        runCatching { repo.refresh("system_app_picker_prompt") }
+        val state = repo.currentState()
+        val candidate = userId ?: (state as? SpaceState.Healthy)?.userId
+        if (candidate != null && spaceUsabilityFromState(state, candidate) == SpaceUsability.Usable) return candidate
+        delay(SPACE_WAIT_POLL_MS)
+    }
+    return null
+}
+
+private const val SPACE_WAIT_ATTEMPTS = 14
+private const val SPACE_WAIT_POLL_MS = 1_500L
 
 @Composable
 fun PrismNavHost(navController: NavHostController) {
@@ -67,6 +99,30 @@ fun PrismNavHost(navController: NavHostController) {
                 launchSingleTop = true
                 popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                 restoreState = true
+            }
+        }
+    }
+    LaunchedEffect(navController) {
+        // Space screen「添加系统应用」→ the system-app selection page.
+        var lastNonce = 0
+        AppLaunchSignals.openSystemAppPicker.collect { request ->
+            if (request != null && request.nonce != lastNonce) {
+                lastNonce = request.nonce
+                navController.navigate(PrismRoutes.systemAppPicker(request.userId, request.origin)) { launchSingleTop = true }
+            }
+        }
+    }
+    val context = LocalContext.current
+    LaunchedEffect(navController) {
+        // A space was just created: ask once, but only while the profile still reports Pending.
+        SystemAppPickerPrompt.expected(context).collect { expectation ->
+            if (expectation == null) return@collect
+            val userId = awaitUsableSpace(context, expectation.userId) ?: return@collect   // Keep the mark; retry next start.
+            when (val status = withContext(Dispatchers.IO) { SystemAppSelectionClient.readStatus(context, userId) }) {
+                is ProfileBridgeResult.Value -> if (status.value == SelectionStatus.Pending) {
+                    navController.navigate(PrismRoutes.systemAppPicker(userId, SYSTEM_APP_PICKER_ORIGIN_SETUP)) { launchSingleTop = true }
+                } else SystemAppPickerPrompt.clear(context)
+                else -> DiagnosticLog.i("Prism.SysAppPicker", "picker_not_ready u=$userId usability=bridge:${status.javaClass.simpleName}")
             }
         }
     }
@@ -118,6 +174,22 @@ fun PrismNavHost(navController: NavHostController) {
                 composable(PrismRoutes.SPACE)    { SpaceScreen() }
                 composable(PrismRoutes.FILES)    { FilesScreen() }
                 composable(PrismRoutes.SETTINGS) { SettingsScreen() }
+                composable(
+                    PrismRoutes.SYSTEM_APP_PICKER,
+                    arguments = listOf(
+                        navArgument(SystemAppPickerViewModel.ARG_USER_ID) { type = NavType.IntType },
+                        navArgument(SystemAppPickerViewModel.ARG_ORIGIN) {
+                            type = NavType.StringType
+                            defaultValue = SYSTEM_APP_PICKER_ORIGIN_SPACE
+                        },
+                    ),
+                ) { entry ->
+                    val origin = entry.arguments?.getString(SystemAppPickerViewModel.ARG_ORIGIN)
+                    SystemAppPickerScreen(onFinished = {
+                        if (origin == SYSTEM_APP_PICKER_ORIGIN_SETUP) navController.navigateToTab(PrismRoutes.HOME)
+                        else navController.popBackStack()
+                    })
+                }
             }
         }
     }
