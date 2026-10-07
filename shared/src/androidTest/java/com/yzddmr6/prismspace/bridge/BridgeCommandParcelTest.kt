@@ -109,6 +109,7 @@ class BridgeCommandParcelTest {
             assertRoundTrip(TriggerIncrementalProvisioning, true)
             assertRoundTrip(WipeProfile, false)
             assertRoundTrip(QueryParentIsProfileOwner, true)
+            assertRoundTrip(QueryVendorCloneProfilePresence, com.yzddmr6.prismspace.util.CloneProfilePresence.Present)
             assertRoundTrip(SaveProfileName(10, "Work"), true)
             assertRoundTrip(EstablishBackwardGrant, Unit)
             assertRoundTrip(SetAppOpMode("pkg", 1, 2, 1_000_001), Unit)

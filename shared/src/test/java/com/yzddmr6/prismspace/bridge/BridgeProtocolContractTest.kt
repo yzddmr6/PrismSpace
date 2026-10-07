@@ -139,6 +139,16 @@ class BridgeProtocolContractTest {
         }
     }
 
+    @Test fun vendorClonePresenceIsAMainSpaceQueryAndDispatched() {
+        val samples = BridgeCommandCatalog.all.filterIsInstance<QueryVendorCloneProfilePresence>()
+        assertEquals(1, samples.size)
+        assertTrue("the dual space asks the main space", samples.single() is ParentCommand<*>)
+        assertEquals("space.query_vendor_clone_presence", samples.single().id)
+        val dispatcher = File("src/main/java/com/yzddmr6/prismspace/bridge/BridgeDispatcher.kt").readText()
+        assertTrue(dispatcher.contains("QueryVendorCloneProfilePresence -> success("))
+        assertTrue(dispatcher.contains("Users.vendorCloneProfilePresence(context)"))
+    }
+
     @Test fun removedFileCommandsStayRemoved() {
         val ids = BridgeCommandCatalog.all.map { it.id }.toSet()
         listOf(

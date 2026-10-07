@@ -42,9 +42,8 @@ import com.yzddmr6.prismspace.prism.transfer.TransferEntry
 import com.yzddmr6.prismspace.prism.transfer.TransferLedger
 import com.yzddmr6.prismspace.prism.transfer.TransferSheetState
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.yzddmr6.prismspace.util.CloneProfilePresence
+import com.yzddmr6.prismspace.prism.transfer.VendorCloneNotice
 import com.yzddmr6.prismspace.util.DevicePolicies
-import com.yzddmr6.prismspace.util.Users
 
 /**
  * Profile-side entry screen shown when user taps the "棱镜-双开空间" icon in work-profile launcher.
@@ -78,12 +77,11 @@ fun PrismProfileEntryScreen() {
     val transfers = transferState?.history.orEmpty()
     val pending = transferState?.pending.orEmpty()
     val transfersLifecycleOwner = LocalLifecycleOwner.current
-    // Read-only system-level dual-apps notice; binder calls, so off the main thread and outside remember{}.
+    // Read-only system-level dual-apps notice: local check, then the main space over the bridge when
+    // this side cannot read sibling profile types. Binder calls, so off the main thread and outside remember{}.
     var cloneNotice by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        cloneNotice = withContext(Dispatchers.IO) {
-            Users.vendorCloneProfilePresence(context) == CloneProfilePresence.Present
-        }
+        cloneNotice = withContext(Dispatchers.IO) { VendorCloneNotice.show(context) }
     }
     val scope = rememberCoroutineScope()
     fun reloadTransfers() {

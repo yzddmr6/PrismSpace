@@ -3,6 +3,7 @@ package com.yzddmr6.prismspace.bridge
 import android.os.Bundle
 import android.app.PendingIntent
 import android.os.Parcelable
+import com.yzddmr6.prismspace.util.CloneProfilePresence
 import kotlinx.parcelize.Parcelize
 
 @Parcelize
@@ -79,6 +80,18 @@ data object QueryParentIsProfileOwner : ParentCommand<Boolean> {
     override val id get() = "space.query_parent_profile_owner"
     override fun encodeResult(result: Boolean, out: Bundle) = out.putBoolean(RESULT, result)
     override fun decodeResult(src: Bundle) = src.getBoolean(RESULT)
+}
+
+/**
+ * The main space's read-only view of vendor CLONE profiles (e.g. XSpace). The dual space cannot read
+ * sibling profile types itself, so its notice asks here. Encoded as the [CloneProfilePresence] name.
+ */
+@Parcelize
+data object QueryVendorCloneProfilePresence : ParentCommand<CloneProfilePresence> {
+    override val id get() = "space.query_vendor_clone_presence"
+    override fun encodeResult(result: CloneProfilePresence, out: Bundle) = out.putString(RESULT, result.name)
+    override fun decodeResult(src: Bundle): CloneProfilePresence =
+        CloneProfilePresence.entries.firstOrNull { it.name == src.getString(RESULT) } ?: CloneProfilePresence.Unknown
 }
 
 @Parcelize
@@ -183,6 +196,7 @@ internal val SPACE_AND_SHORTCUT_COMMAND_SAMPLES: List<BridgeCommand<*>> = listOf
     TriggerIncrementalProvisioning,
     WipeProfile,
     QueryParentIsProfileOwner,
+    QueryVendorCloneProfilePresence,
     SaveProfileName(10, "Space"),
     EstablishBackwardGrant,
     SetAppOpMode("pkg", 1, 2, 10001),

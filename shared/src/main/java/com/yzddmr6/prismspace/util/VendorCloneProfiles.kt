@@ -24,6 +24,14 @@ object VendorCloneProfiles {
         else -> CloneProfilePresence.Absent
     }
 
+    /**
+     * A definitive local answer (Present / Absent) wins and [askMainSpace] is not called. Only an
+     * Unknown local answer (the dual space cannot read sibling types) asks the main space; a failed or
+     * unavailable query (null) stays Unknown, which shows no notice and is never an error.
+     */
+    fun resolve(local: CloneProfilePresence, askMainSpace: () -> CloneProfilePresence?): CloneProfilePresence =
+        if (local != CloneProfilePresence.Unknown) local else askMainSpace() ?: CloneProfilePresence.Unknown
+
     /** Conservative: only a positively identified CLONE profile shows the notice. */
     fun hasVendorCloneProfile(sdkInt: Int, profileTypes: List<String?>): Boolean =
         presence(sdkInt, profileTypes) == CloneProfilePresence.Present

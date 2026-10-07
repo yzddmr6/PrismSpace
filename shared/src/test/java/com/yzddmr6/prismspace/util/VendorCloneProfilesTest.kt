@@ -34,6 +34,35 @@ class VendorCloneProfilesTest {
         assertEquals(CloneProfilePresence.Unknown, VendorCloneProfiles.presence(36, listOf(full, null)))
     }
 
+    @Test fun aDefinitiveLocalAnswerNeverAsksTheMainSpace() {
+        var calls = 0
+        val ask = { calls++; CloneProfilePresence.Absent }
+        assertEquals(CloneProfilePresence.Present, VendorCloneProfiles.resolve(CloneProfilePresence.Present, ask))
+        assertEquals(CloneProfilePresence.Absent, VendorCloneProfiles.resolve(CloneProfilePresence.Absent, ask))
+        assertEquals(0, calls)
+    }
+
+    @Test fun anUnknownLocalAnswerTakesTheMainSpaceAnswer() {
+        var calls = 0
+        assertEquals(
+            CloneProfilePresence.Present,
+            VendorCloneProfiles.resolve(CloneProfilePresence.Unknown) { calls++; CloneProfilePresence.Present },
+        )
+        assertEquals(1, calls)
+        assertEquals(
+            CloneProfilePresence.Absent,
+            VendorCloneProfiles.resolve(CloneProfilePresence.Unknown) { CloneProfilePresence.Absent },
+        )
+    }
+
+    @Test fun aFailedMainSpaceQueryStaysUnknown() {
+        assertEquals(CloneProfilePresence.Unknown, VendorCloneProfiles.resolve(CloneProfilePresence.Unknown) { null })
+        assertEquals(
+            CloneProfilePresence.Unknown,
+            VendorCloneProfiles.resolve(CloneProfilePresence.Unknown) { CloneProfilePresence.Unknown },
+        )
+    }
+
     @Test fun theNoticeShowsOnlyForPresent() {
         assertTrue(VendorCloneProfiles.hasVendorCloneProfile(36, listOf(full, clone)))
         assertFalse(VendorCloneProfiles.hasVendorCloneProfile(36, listOf(full, managed)))

@@ -7,8 +7,7 @@ import com.yzddmr6.prismspace.prism.compose.space.SpaceUsability
 import com.yzddmr6.prismspace.prism.transfer.TransferLedger
 import com.yzddmr6.prismspace.prism.transfer.TransferLedgerRecord
 import com.yzddmr6.prismspace.prism.transfer.currentDualUsability
-import com.yzddmr6.prismspace.util.CloneProfilePresence
-import com.yzddmr6.prismspace.util.Users
+import com.yzddmr6.prismspace.prism.transfer.VendorCloneNotice
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -42,9 +41,7 @@ class FilesViewModel(app: Application) : AndroidViewModel(app) {
     fun refresh() {
         viewModelScope.launch {
             _history.value = withContext(Dispatchers.IO) { TransferLedger.load(getApplication()) }
-            _vendorCloneNotice.value = withContext(Dispatchers.IO) {
-                Users.vendorCloneProfilePresence(getApplication()) == CloneProfilePresence.Present
-            }
+            _vendorCloneNotice.value = withContext(Dispatchers.IO) { VendorCloneNotice.show(getApplication()) }
         }
     }
 

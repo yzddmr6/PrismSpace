@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Bundle
 import com.yzddmr6.prismspace.analytics.DiagnosticLog
 import com.yzddmr6.prismspace.provisioning.SystemAppPolicyRuntime
+import com.yzddmr6.prismspace.util.Users
 
 enum class BridgeErrorCategory { HandlerUnavailable, InvalidRequest, ExecutionFailed }
 
@@ -101,6 +102,10 @@ internal object BridgeDispatcher {
             QueryParentIsProfileOwner -> success(
                 QueryParentIsProfileOwner,
                 CoreBridgeOperations.queryIsProfileOwner(context),
+            )
+            QueryVendorCloneProfilePresence -> success(
+                QueryVendorCloneProfilePresence,
+                Users.vendorCloneProfilePresence(context),
             )
             is SaveProfileName -> success(
                 command,
