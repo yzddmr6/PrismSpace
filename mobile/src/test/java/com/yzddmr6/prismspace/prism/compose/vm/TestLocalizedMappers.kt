@@ -42,9 +42,6 @@ val testZhResolver: StringResolver by lazy {
 }
 
 // Test-local overloads keep pure mapper tests concise without a production fallback catalog.
-fun filesImportFeedback(success: Int, failed: Int) = filesImportFeedback(success, failed, testZhResolver)
-fun filesImportFeedbackDetailed(ok: Int, oversize: Int, otherFail: Int) =
-    filesImportFeedbackDetailed(ok, oversize, otherFail, testZhResolver)
 fun batchActionFeedback(action: BatchAction, succeeded: Int, failed: Int) =
     batchActionFeedback(action, succeeded, failed, testZhResolver)
 internal fun uninstallQueueFeedback(summary: UninstallSummary, uninstallSkipped: Int = 0) =

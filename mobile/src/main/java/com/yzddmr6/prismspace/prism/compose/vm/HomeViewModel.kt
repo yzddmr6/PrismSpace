@@ -18,8 +18,8 @@ import com.yzddmr6.prismspace.prism.compose.space.presentSpace
 import com.yzddmr6.prismspace.prism.compose.space.SpaceUsability
 import com.yzddmr6.prismspace.prism.compose.nav.PrismRoutes
 import com.yzddmr6.prismspace.mobile.R
-import com.yzddmr6.prismspace.prism.service.TransferHistoryStore
-import com.yzddmr6.prismspace.prism.service.displayTitle
+import com.yzddmr6.prismspace.prism.transfer.TransferLedger
+import com.yzddmr6.prismspace.prism.transfer.transferRowModel
 import com.yzddmr6.prismspace.util.Apps
 import com.yzddmr6.prismspace.util.PrismLocale
 import com.yzddmr6.prismspace.util.Users
@@ -397,11 +397,13 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         val usability = dual?.let { spaceRepo.usabilityOf(it) } ?: SpaceUsability.NotProvisioned
         val installGate = continueInstallGate(usability) { id, args -> PrismLocale.wrap(context).getString(id, *args) }
 
-        val recentTransfer = runCatching { TransferHistoryStore.load(context).firstOrNull() }.getOrNull()
-        val recentTransferText = recentTransfer?.let { record ->
-            listOf(record.name, record.location.takeIf { it.isNotBlank() })
-                .filterNotNull().joinToString(" · ")
-        }
+        // Same row model as the Files page, so "Sent · Dual space" reads identically on both surfaces.
+        val recentTransferText = runCatching {
+            TransferLedger.load(context).firstOrNull()?.let { record ->
+                transferRowModel(record, prismResolver(context), currentIsParent = true)
+                    .let { model -> "${model.title} · ${model.summary}" }
+            }
+        }.getOrNull()
 
         // This row must describe the same canonical state as the hero card. In particular, a
         // half-provisioned profile exists even when its launcher marker is missing; the legacy

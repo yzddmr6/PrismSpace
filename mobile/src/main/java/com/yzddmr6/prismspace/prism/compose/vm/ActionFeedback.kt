@@ -22,22 +22,6 @@ typealias StringResolver = (Int, Array<out Any>) -> String
 fun prismResolver(context: Context): StringResolver =
     { id, args -> PrismLocale.wrap(context).getString(id, *args) }
 
-/** Pure: Files import success/failure counts → user feedback. */
-fun filesImportFeedback(success: Int, failed: Int, res: StringResolver): ActionFeedback = when {
-    success == 0 && failed == 0 -> ActionFeedback("", false)
-    failed == 0 -> ActionFeedback(res(R.string.lz_vm_files_imported, arrayOf(success)), false)
-    success == 0 -> ActionFeedback(res(R.string.lz_vm_files_import_all_failed, arrayOf(failed)), true)
-    else -> ActionFeedback(res(R.string.lz_vm_files_import_partial, arrayOf(success, failed)), true)
-}
-
-/**
- * Pure: detailed Files import outcome. For the common no-oversize path it
- * delegates to [filesImportFeedback]; the oversize case adds specific copy.
- */
-fun filesImportFeedbackDetailed(ok: Int, oversize: Int, otherFail: Int, res: StringResolver): ActionFeedback =
-    if (oversize == 0) filesImportFeedback(ok, otherFail, res)
-    else ActionFeedback(res(R.string.lz_vm_files_import_detailed, arrayOf(ok, oversize, otherFail)), isError = true)
-
 /**
  * Pure: batch-action feedback shared by SpaceViewModel and tests.
  * failed == failures.size; isError == failures.isNotEmpty().

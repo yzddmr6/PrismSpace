@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -50,20 +49,23 @@ import androidx.compose.material3.Button
 import androidx.compose.ui.draw.rotate
 import com.yzddmr6.prismspace.prism.compose.vm.ActionFeedback
 import com.yzddmr6.prismspace.prism.compose.vm.AppFeedbackBus
+import com.yzddmr6.prismspace.prism.compose.vm.continueInstallGate
 import com.yzddmr6.prismspace.prism.compose.vm.fileTransferGate
 import com.yzddmr6.prismspace.prism.compose.vm.prismResolver
 import kotlinx.coroutines.launch
+import com.yzddmr6.prismspace.prism.compose.component.TransferHistoryList
+import com.yzddmr6.prismspace.prism.compose.component.TransferSheetHost
 import com.yzddmr6.prismspace.prism.compose.theme.PrismSpacing
 import com.yzddmr6.prismspace.prism.compose.vm.FilesViewModel
+import com.yzddmr6.prismspace.prism.compose.vm.TransferSheetViewModel
 import com.yzddmr6.prismspace.prism.service.FileBridgeService
-import com.yzddmr6.prismspace.prism.service.TransferDirection
-import com.yzddmr6.prismspace.prism.service.TransferRecord
-import com.yzddmr6.prismspace.prism.service.openSystemFileManager
 import com.yzddmr6.prismspace.prism.service.prepareSystemFilePickerUsable
-import com.yzddmr6.prismspace.prism.ui.CrossSpaceTransferEntry
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import com.yzddmr6.prismspace.prism.transfer.TransferEntry
+import com.yzddmr6.prismspace.prism.transfer.TransferSheetState
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,41 +74,32 @@ fun FilesScreen() {
     val context = LocalContext.current
     val activity = context as? Activity
     val history by vm.history.collectAsState()
-    var showClearConfirm by remember { mutableStateOf(false) }
+    val transferVm: TransferSheetViewModel = viewModel()
     var showReturnGuide by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    // The picker result lands in this Activity, so the transfer runs here too: no URI grant is
+    // handed to another component and no intent can ask to skip the confirmation.
     val sendFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        CrossSpaceTransferEntry.launch(context, uris)
+        transferVm.startInApp(uris, TransferEntry.FilesPage)
     }
 
-    // 记录动作只承诺「打开文件夹」：APK 记录开双开空间下载目录，普通文件开系统文件管理器。
-    fun openRecordFolder(item: TransferRecord) {
-        if (item.packageName != null && activity != null) {
-            FileBridgeService().openProfileDownloadsFolder(activity)
-        } else {
-            openSystemFileManager(context)
-        }
-    }
-
-    // Refresh whenever the tab is shown (a transfer may have happened in another app meanwhile).
+    // Refresh on first show and on every resume: a share-sheet transfer may have written a row
+    // while this tab was in the background.
     LaunchedEffect(Unit) { vm.refresh() }
-
-    if (showClearConfirm) {
-        AlertDialog(
-            onDismissRequest = { showClearConfirm = false },
-            title = { Text(stringResource(R.string.lz_pf_files_clear_confirm_title)) },
-            // Make explicit it only clears the LOG, not the transferred files (users fear data loss).
-            text = { Text(stringResource(R.string.lz_pf_files_clear_confirm_body)) },
-            confirmButton = {
-                PrismTextButton(onClick = { showClearConfirm = false; vm.clearHistory() }) {
-                    Text(stringResource(R.string.lz_pf_files_clear))
-                }
-            },
-            dismissButton = {
-                PrismTextButton(onClick = { showClearConfirm = false }) { Text(stringResource(R.string.lz_set_cancel)) }
-            },
-        )
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) vm.refresh()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+
+    TransferSheetHost(transferVm, onClosed = { vm.refresh() })
+    // Both ledger rows are written before the Result appears; show the "Sent" row right away.
+    val sheet by transferVm.state.collectAsState()
+    val showingResult = sheet is TransferSheetState.Result
+    LaunchedEffect(showingResult) { if (showingResult) vm.refresh() }
 
     Scaffold(
         topBar = {
@@ -134,7 +127,7 @@ fun FilesScreen() {
                         .padding(horizontal = PrismSpacing.Lg, vertical = PrismSpacing.Lg),
                 ) {
                     Text(
-                        text = stringResource(R.string.lz_pf_files_send_other),
+                        text = stringResource(R.string.lz_xfer_send_to_dual),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
@@ -161,7 +154,7 @@ fun FilesScreen() {
                                 if (prepareSystemFilePickerUsable(context)) {
                                     sendFiles.launch(arrayOf("*/*"))
                                 } else {
-                                    Toast.makeText(context, R.string.lz_pf_open_fail, Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, R.string.lz_xfer_picker_unavailable, Toast.LENGTH_LONG).show()
                                 }
                             }
                         },
@@ -212,58 +205,27 @@ fun FilesScreen() {
                 }
             }
 
-            // ── Persisted transfer history (survives app restart) ──
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = PrismSpacing.Sm),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(R.string.lz_pf_files_history_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f),
-                )
-                if (history.isNotEmpty()) {
-                    PrismTextButton(onClick = { showClearConfirm = true }) { Text(stringResource(R.string.lz_pf_files_clear)) }
-                }
-            }
-
-            if (history.isNotEmpty()) {
-                GroupCard(title = null) {
-                    history.forEach { item ->
-                        // 记录动作只承诺「打开文件夹」；APK 安装任务不属于文件页（归属分身链路：
-                        // 首页待办卡、主空间行、双开空间入口页）。
-                        ActionRow(
-                            title = item.name,
-                            summary = listOf(
-                                item.direction?.let { direction -> stringResource(
-                                    if (direction == TransferDirection.ToMain) R.string.lz_pf_direction_to_main
-                                    else R.string.lz_pf_direction_to_profile,
-                                ) },
-                                item.location.takeIf { it.isNotBlank() },
-                                formatTime(item.timeMillis).takeIf { it.isNotBlank() },
-                            )
-                                .filterNotNull().joinToString(" · "),
-                            leadingIcon = if (item.isImage) PrismIcons.Img else PrismIcons.File,
-                            trailing = {
-                                PrismTextButton(onClick = { openRecordFolder(item) }) {
-                                    Text(stringResource(R.string.lz_pf_open_folder))
-                                }
-                            },
-                            onClick = { openRecordFolder(item) },
-                        )
+            // ── Transfer ledger: files sent from here and files received here ──
+            TransferHistoryList(
+                records = history,
+                currentIsParent = true,
+                onClear = vm::clearHistory,
+                onRemove = vm::removeRecord,
+                onApkAction = {
+                    // APK-suite rows keep their install entry, gated like the Home card.
+                    scope.launch {
+                        val gate = continueInstallGate(vm.dualUsability(), prismResolver(context))
+                        if (!gate.enabled) {
+                            gate.guidance?.let { AppFeedbackBus.emit(ActionFeedback(it, isError = true)) }
+                            return@launch
+                        }
+                        activity?.let { host ->
+                            val result = FileBridgeService().openProfileInstallEntry(host)
+                            if (!result.success) AppFeedbackBus.emit(ActionFeedback(result.message, isError = true))
+                        }
                     }
-                }
-            } else {
-                GroupCard(title = null) {
-                    Text(
-                        text = stringResource(R.string.lz_pf_files_history_empty),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = PrismSpacing.Lg, vertical = 18.dp),
-                    )
-                }
-            }
+                },
+            )
 
             Spacer(Modifier.height(PrismSpacing.Sm))
         }
@@ -293,6 +255,3 @@ private fun GuideStep(n: Int, text: String) {
         )
     }
 }
-
-private fun formatTime(millis: Long): String =
-    if (millis <= 0L) "" else SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(millis))

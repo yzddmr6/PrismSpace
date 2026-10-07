@@ -33,15 +33,16 @@ import com.yzddmr6.prismspace.prism.compose.component.PrismLevel
 import com.yzddmr6.prismspace.prism.compose.component.PrismTextButton
 import com.yzddmr6.prismspace.prism.compose.component.StatusHeroCard
 import com.yzddmr6.prismspace.prism.compose.component.StatusRow
+import com.yzddmr6.prismspace.prism.compose.component.TransferHistoryList
+import com.yzddmr6.prismspace.prism.compose.component.TransferSheetHost
 import com.yzddmr6.prismspace.prism.compose.theme.PrismTheme
-import com.yzddmr6.prismspace.prism.service.TransferDirection
-import com.yzddmr6.prismspace.prism.service.openSystemFileManager
+import com.yzddmr6.prismspace.prism.compose.vm.TransferSheetViewModel
 import com.yzddmr6.prismspace.prism.service.prepareSystemFilePickerUsable
-import com.yzddmr6.prismspace.prism.ui.CrossSpaceTransferEntry
+import com.yzddmr6.prismspace.prism.transfer.TransferEntry
+import com.yzddmr6.prismspace.prism.transfer.TransferLedger
+import com.yzddmr6.prismspace.prism.transfer.TransferSheetState
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.yzddmr6.prismspace.util.DevicePolicies
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * Profile-side entry screen shown when user taps the "棱镜-双开空间" icon in work-profile launcher.
@@ -62,28 +63,33 @@ import java.util.Locale
 fun PrismProfileEntryScreen() {
     val context = LocalContext.current
     val state = remember { loadProfileEntryState(context) }
+    val transferVm: TransferSheetViewModel = viewModel()
+    // The picker result lands in this Activity, so the transfer runs here with no confirmation hop.
     val sendFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        CrossSpaceTransferEntry.launch(context, uris)
+        transferVm.startInApp(uris, TransferEntry.ProfileEntry)
     }
 
-    // Transfer history for THIS space — files that landed in the dual space: shares imported here
-    // (ImportToSpaceActivity) + clone APKs synced in (importApkToProfile). TransferHistoryStore is
-    // per-user, so this reads only this profile's records. Reload on every ON_RESUME: a clone/
-    // transfer may have written a new record while this screen was backgrounded — a one-shot
-    // remember{load()} would show a stale snapshot.
+    // This space's transfer ledger: files received here (shares, in-app sends, APK suites) and files
+    // sent from here to the main space. Per-user by construction. Reload on every ON_RESUME: a clone or
+    // transfer may have written a row while this screen was backgrounded.
     var transferState by remember { mutableStateOf<ProfileTransfers?>(null) }
     val transfers = transferState?.history.orEmpty()
     val pending = transferState?.pending.orEmpty()
     val transfersLifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
+    fun reloadTransfers() {
+        scope.launch { transferState = withContext(Dispatchers.IO) { loadProfileTransfers(context) } }
+    }
     DisposableEffect(transfersLifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) transfersLifecycleOwner.lifecycleScope.launch {
-                transferState = withContext(Dispatchers.IO) { loadProfileTransfers(context) }
-            }
+            if (event == Lifecycle.Event.ON_RESUME) reloadTransfers()
         }
         transfersLifecycleOwner.lifecycle.addObserver(observer)
         onDispose { transfersLifecycleOwner.lifecycle.removeObserver(observer) }
     }
+    val sheet by transferVm.state.collectAsState()
+    val showingResult = sheet is TransferSheetState.Result
+    LaunchedEffect(showingResult) { if (showingResult) reloadTransfers() }
 
     PrismTheme {
         Scaffold(
@@ -140,17 +146,17 @@ fun PrismProfileEntryScreen() {
                                 pending.forEach { item ->
                                     val pkg = item.packageName!!
                                     ActionRow(
-                                        title = item.name,
+                                        title = item.displayName,
                                         summary = stringResource(R.string.lz_pf_entry_pending_ready),
                                         leadingIcon = PrismIcons.File,
                                         trailing = {
                                             Button(onClick = {
-                                                ProfileApkInstaller.install(context, pkg, item.name)
+                                                ProfileApkInstaller.install(context, pkg, item.displayName)
                                             }) {
                                                 Text(stringResource(R.string.lz_pf_install))
                                             }
                                         },
-                                        onClick = { ProfileApkInstaller.install(context, pkg, item.name) },
+                                        onClick = { ProfileApkInstaller.install(context, pkg, item.displayName) },
                                     )
                                 }
                             }
@@ -159,65 +165,37 @@ fun PrismProfileEntryScreen() {
 
                     GroupCard {
                         ActionRow(
-                            title = stringResource(R.string.lz_pf_entry_send_to_main),
+                            title = stringResource(R.string.lz_xfer_send_to_main),
                             summary = stringResource(R.string.lz_shell_profile_pick_files),
                             leadingIcon = PrismIcons.File,
                             onClick = {
                                 if (prepareSystemFilePickerUsable(context)) {
                                     sendFiles.launch(arrayOf("*/*"))
                                 } else {
-                                    Toast.makeText(context, R.string.lz_pf_open_fail, Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, R.string.lz_xfer_picker_unavailable, Toast.LENGTH_LONG).show()
                                 }
                             },
                         )
                     }
-                    // Files that have arrived in this space — tap a row to open the file manager.
-                    // Same section wording as the main space's Files tab ("传输记录") for consistency.
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            text = stringResource(R.string.lz_pf_files_history_title),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        if (transfers.isNotEmpty()) {
-                            GroupCard {
-                                transfers.forEach { item ->
-                                    // Plain history rows: tap opens the file manager; install actions
-                                    // live in the 待安装 section above, not in record rows.
-                                    ActionRow(
-                                        title = item.name,
-                                        summary = listOf(
-                                            item.direction?.let { direction -> stringResource(
-                                                if (direction == TransferDirection.ToMain) R.string.lz_pf_direction_to_main
-                                                else R.string.lz_pf_direction_to_profile,
-                                            ) },
-                                            item.location.takeIf { it.isNotBlank() },
-                                            formatTransferTime(item.timeMillis).takeIf { it.isNotBlank() },
-                                        ).filterNotNull().joinToString(" · "),
-                                        leadingIcon = if (item.isImage) PrismIcons.Img else PrismIcons.File,
-                                        trailing = {
-                                            Icon(
-                                                imageVector = PrismIcons.FileOpen,
-                                                contentDescription = stringResource(R.string.lz_pf_open_action),
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.size(20.dp),
-                                            )
-                                        },
-                                        onClick = { openSystemFileManager(context) },
-                                    )
-                                }
+                    TransferHistoryList(
+                        records = transfers,
+                        currentIsParent = false,
+                        onClear = {
+                            scope.launch {
+                                withContext(Dispatchers.IO) { TransferLedger.clear(context) }
+                                reloadTransfers()
                             }
-                        } else {
-                            GroupCard {
-                                Text(
-                                    text = stringResource(R.string.lz_pf_files_history_empty),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 18.dp),
-                                )
+                        },
+                        onRemove = { id ->
+                            scope.launch {
+                                withContext(Dispatchers.IO) { TransferLedger.remove(context, id) }
+                                reloadTransfers()
                             }
-                        }
-                    }
+                        },
+                        onApkAction = { record ->
+                            record.packageName?.let { ProfileApkInstaller.install(context, it, record.displayName) }
+                        },
+                    )
                 }
 
                 Spacer(Modifier.height(4.dp))
@@ -246,6 +224,8 @@ fun PrismProfileEntryScreen() {
                 Spacer(Modifier.height(16.dp))
             }
         }
+
+        TransferSheetHost(transferVm, onClosed = { reloadTransfers() })
 
         // The session result is classified, not guessed: a refusal by the ROM's own installer and a
         // real user cancel arrive with the same code, so only a refusal gets a way out offered here.
@@ -302,10 +282,6 @@ private fun ProfileInstallOutcomeDialog() {
         else -> Unit
     }
 }
-
-/** Short "MM-dd HH:mm" stamp for a transfer record; blank when the time is unknown. */
-private fun formatTransferTime(millis: Long): String =
-    if (millis <= 0L) "" else SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(millis))
 
 /** State container for PrismProfileEntryScreen. Resolved synchronously from profile-local APIs. */
 internal data class ProfileEntryState(

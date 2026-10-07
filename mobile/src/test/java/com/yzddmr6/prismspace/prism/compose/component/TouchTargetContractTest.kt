@@ -28,6 +28,8 @@ class TouchTargetContractTest {
             "mobile/src/main/java/com/yzddmr6/prismspace/prism/compose/screen/SettingsScreen.kt",
             "mobile/src/main/java/com/yzddmr6/prismspace/setup/compose/PrismSetupScreen.kt",
             "mobile/src/main/java/com/yzddmr6/prismspace/prism/compose/component/AppActionSheet.kt",
+            "mobile/src/main/java/com/yzddmr6/prismspace/prism/compose/component/TransferSheet.kt",
+            "mobile/src/main/java/com/yzddmr6/prismspace/prism/compose/component/TransferHistoryList.kt",
         ).forEach { path ->
             val source = readSource(path)
             val raw = Regex("(?<!Prism)TextButton\\(").findAll(source).count()
@@ -47,6 +49,8 @@ class TouchTargetContractTest {
             "mobile/src/main/java/com/yzddmr6/prismspace/prism/compose/component/SpaceSegmentChips.kt",
             "mobile/src/main/java/com/yzddmr6/prismspace/prism/compose/component/DeleteSpaceSheets.kt",
             "mobile/src/main/java/com/yzddmr6/prismspace/prism/compose/component/ModeGuideSheet.kt",
+            "mobile/src/main/java/com/yzddmr6/prismspace/prism/compose/component/TransferSheet.kt",
+            "mobile/src/main/java/com/yzddmr6/prismspace/prism/compose/component/TransferHistoryList.kt",
         ).forEach { path ->
             val source = readSource(path)
             assertTrue("$path must reference PrismMinTouchTarget", source.contains("PrismMinTouchTarget"))
