@@ -74,6 +74,8 @@ data class ProfileAppEntry(
     val launcherEntry: Boolean = false,
     /** The system app policy targets this package as unavailable ("not in this space"). */
     val policyHidden: Boolean = false,
+    /** Action that opens the package's UI inside the profile when it has no launcher entry. */
+    val entryAction: String? = null,
 ) : Parcelable
 
 @Parcelize

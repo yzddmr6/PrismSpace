@@ -93,6 +93,19 @@ class SpaceMapTest {
     }
 
     @Test
+    fun `settings reachable only through an action entry still offers Open`() {
+        // Fresh HyperOS work profile: Settings has no launcher component, ACTION_SETTINGS resolves.
+        val row = mapRows(listOf(SpaceAppInput(
+            pkg = "com.android.settings", label = "设置", frozen = false, suspended = false, launchable = true,
+            system = true, cloned = false, segment = SpaceSegment.Dual, critical = true,
+            launchability = AppLaunchability.Launchable, entryAction = "android.settings.SETTINGS",
+        ))).single()
+        assertEquals(SpaceRowAction.Open, row.primaryAction)
+        assertEquals("android.settings.SETTINGS", row.entryAction)
+        assertTrue(row.launchable)
+    }
+
+    @Test
     fun `dual paused system app reads paused and offers Resume`() {
         val row = mapRows(listOf(dualInput(system = true, frozen = true, launchability = AppLaunchability.Paused))).single()
         assertEquals("已暂停", row.chipText)

@@ -20,7 +20,16 @@ data class SystemAppFacts(
     val exempt: Set<String>,
     /** Packages with an *enabled* launcher entry (launchability scope, hidden packages included). */
     val enabledLauncherPackages: Set<String>,
+    /**
+     * Packages without an enabled launcher entry whose UI is still reachable through a well-known
+     * system action inside this profile (pkg → action). HyperOS ships Settings in a fresh work
+     * profile without a launcher component while ACTION_SETTINGS still resolves to it.
+     */
+    val entryActions: Map<String, String> = emptyMap(),
 )
+
+/** Well-known actions that open an app's main UI when it has no launcher entry. */
+val SYSTEM_ENTRY_ACTIONS: List<String> = listOf(android.provider.Settings.ACTION_SETTINGS)
 
 /**
  * Profile-side fact collection (design §3). The policy scope of "has a launcher entry" includes
@@ -59,11 +68,19 @@ data class SystemAppFacts(
                 .filter { it.serviceInfo.applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0 }
                 .mapTo(HashSet()) { it.packageName }
         }.getOrDefault(emptySet())
+        // 5. Action entries: resolved in this profile, only for packages without a launcher entry.
+        val entryActions = LinkedHashMap<String, String>()
+        SYSTEM_ENTRY_ACTIONS.forEach { action ->
+            val pkg = runCatching { pm.resolveActivity(Intent(action), PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName }
+                .getOrNull() ?: return@forEach
+            if (pkg != "android" && pkg !in enabledLauncher && pkg !in entryActions) entryActions[pkg] = action
+        }
         return SystemAppFacts(
             facts = facts,
             critical = SystemAppsManager.detectCriticalSystemPackages(pm),
             exempt = exempt,
             enabledLauncherPackages = enabledLauncher,
+            entryActions = entryActions,
         )
     }
 

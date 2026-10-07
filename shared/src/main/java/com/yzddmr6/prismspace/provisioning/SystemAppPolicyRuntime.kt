@@ -31,7 +31,11 @@ data class ApplyReport(
 }
 
 /** What the profile app list needs from the policy, computed once per page query. */
-data class SystemAppListSnapshot(val policyHidden: Set<String>, val enabledLauncherPackages: Set<String>) {
+data class SystemAppListSnapshot(
+    val policyHidden: Set<String>,
+    val enabledLauncherPackages: Set<String>,
+    val entryActions: Map<String, String> = emptyMap(),
+) {
     companion object { val EMPTY = SystemAppListSnapshot(emptySet(), emptySet()) }
 }
 
@@ -145,7 +149,7 @@ internal class SystemAppPolicyEngine(
         val collected = facts(stored.overrides.keys + SystemAppDefaults.packages)
         val state = ensureInitialized(stored, collected, provisionState)
         val hidden = evaluate(state, collected).filterValues { it.kind() == SystemAppTarget.Unavailable }.keys
-        return SystemAppListSnapshot(hidden, collected.enabledLauncherPackages)
+        return SystemAppListSnapshot(hidden, collected.enabledLauncherPackages, collected.entryActions)
     }
 
     private fun evaluate(state: SystemAppPolicyState, collected: SystemAppFacts) = SystemAppPolicy.evaluate(PolicyInputs(

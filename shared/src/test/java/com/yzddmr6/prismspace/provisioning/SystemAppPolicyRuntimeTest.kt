@@ -38,6 +38,7 @@ class SystemAppPolicyRuntimeTest {
     private val launcher = setOf(CAMERA, CONTACTS, BROWSER, MMS, SETTINGS, IME)
     private val system = setOf(CAMERA, CONTACTS, BROWSER, MMS, SETTINGS, IME, PROVIDER, GMS)
     private val logs = ArrayList<String>()
+    private var entryActions: Map<String, String> = emptyMap()
 
     private fun engine(port: FakePort, persistence: SystemAppPolicyPersistence) = SystemAppPolicyEngine(
         persistence = persistence,
@@ -50,6 +51,7 @@ class SystemAppPolicyRuntimeTest {
                 critical = setOf(SETTINGS, GMS),
                 exempt = setOf(IME),
                 enabledLauncherPackages = launcher,
+                entryActions = entryActions,
             )
         },
         port = port,
@@ -231,6 +233,12 @@ class SystemAppPolicyRuntimeTest {
         logs.clear()
         engine(port, store).converge(ConvergeReason.Incremental, 12)
         assertTrue(logs.none { it.startsWith("policy_step pkg=$GMS") })
+    }
+
+    @Test fun listSnapshotCarriesActionEntries() {
+        entryActions = mapOf(SETTINGS to "android.settings.SETTINGS")
+        val snapshot = engine(FakePort(freshDevice(), system), InMemorySystemAppPolicyPersistence()).listSnapshot(0)
+        assertEquals("android.settings.SETTINGS", snapshot.entryActions[SETTINGS])
     }
 
     @Test fun selectionChangesAreBounded() {

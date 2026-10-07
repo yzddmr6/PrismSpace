@@ -154,7 +154,8 @@ fun AppActionSheet(
                     }
                 }
 
-                if (row.launchable) {
+                // A pinned shortcut needs a launcher activity; action entries (Settings) have none.
+                if (row.launchable && row.entryAction == null) {
                     SheetAction(
                         icon = PrismIcons.Add,
                         title = stringResource(R.string.lz_app_create_shortcut),

@@ -24,13 +24,24 @@ fun resolveLaunchability(hasEnabledLauncherEntry: Boolean?, hidden: Boolean, sus
  * now; a hidden package is invisible there, so the profile-side snapshot carried by the app list
  * page (enabled entries only, hidden packages included) is used instead.
  */
-internal fun dualLauncherEntry(app: PrismAppInfo, visibleLauncherPackages: Set<String>?): Boolean? = when {
-    !app.isHidden && visibleLauncherPackages != null -> app.packageName in visibleLauncherPackages
-    !app.isHidden -> runCatching {
-        app.context().getSystemService(LauncherApps::class.java)!!.getActivityList(app.packageName, app.user).isNotEmpty()
-    }.getOrNull()
-    else -> PrismAppListProvider.getInstance(app.context()).snapshotLauncherEntry(app.user, app.packageName)
+internal fun dualLauncherEntry(app: PrismAppInfo, visibleLauncherPackages: Set<String>?): Boolean? {
+    // An action entry (Settings without a launcher component on HyperOS) is an entry as well.
+    if (dualEntryAction(app) != null) return true
+    return when {
+        !app.isHidden && visibleLauncherPackages != null -> app.packageName in visibleLauncherPackages
+        !app.isHidden -> hasLauncherActivity(app)
+        else -> PrismAppListProvider.getInstance(app.context()).snapshotLauncherEntry(app.user, app.packageName)
+    }
 }
+
+/** Profile-side action entry of a dual-space package without a launcher activity, if any. */
+internal fun dualEntryAction(app: PrismAppInfo): String? =
+    if (app.user.isParentProfile()) null
+    else PrismAppListProvider.getInstance(app.context()).snapshotEntryAction(app.user, app.packageName)
+
+internal fun hasLauncherActivity(app: PrismAppInfo): Boolean? = runCatching {
+    app.context().getSystemService(LauncherApps::class.java)!!.getActivityList(app.packageName, app.user).isNotEmpty()
+}.getOrNull()
 
 /** Fresh launchability of [app]; the parent user keeps its own launcher resolution. */
 internal fun currentLaunchability(app: PrismAppInfo): AppLaunchability =

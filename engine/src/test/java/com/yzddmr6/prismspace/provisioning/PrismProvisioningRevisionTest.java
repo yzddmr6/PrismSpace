@@ -44,6 +44,13 @@ public class PrismProvisioningRevisionTest {
         assertTrue(reinstall > clear);
     }
 
+    @Test public void incrementalConvergenceWaitsForInitialProvisioning() {
+        assertFalse(PrismProvisioning.shouldConvergeIncrementally(0));
+        assertFalse(PrismProvisioning.shouldConvergeIncrementally(2));
+        assertTrue(PrismProvisioning.shouldConvergeIncrementally(3));
+        assertTrue(PrismProvisioning.shouldConvergeIncrementally(12));
+    }
+
     @Test public void currentOrFutureStateSkipsMigration() {
         assertFalse(PrismProvisioning.shouldRunOneTimePostProvisionMigration(10, 10));
         assertFalse(PrismProvisioning.shouldRunOneTimePostProvisionMigration(11, 10));

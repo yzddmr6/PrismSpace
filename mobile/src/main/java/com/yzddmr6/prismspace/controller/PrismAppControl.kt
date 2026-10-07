@@ -30,6 +30,11 @@ import com.yzddmr6.prismspace.mobile.R
 import com.yzddmr6.prismspace.model.interactive
 import com.yzddmr6.prismspace.prism.compose.vm.AppLaunchability
 import com.yzddmr6.prismspace.prism.compose.vm.currentLaunchability
+import com.yzddmr6.prismspace.prism.compose.vm.dualEntryAction
+import com.yzddmr6.prismspace.prism.compose.vm.hasLauncherActivity
+import com.yzddmr6.prismspace.prism.service.ProfileEntryLauncher
+import com.yzddmr6.prismspace.bridge.CancelProfileShortcutLaunch
+import com.yzddmr6.prismspace.bridge.PrepareProfileShortcutLaunch
 import com.yzddmr6.prismspace.prism.compose.vm.launchFeedback
 import com.yzddmr6.prismspace.prism.compose.vm.prismResolver
 import com.yzddmr6.prismspace.prism.service.ProfileBridgeResult
@@ -71,10 +76,36 @@ object PrismAppControl {
 			Toast.makeText(context, prismResolver(context)(R.string.lz_app_no_launcher_entry, emptyArray()), Toast.LENGTH_LONG).show()
 			return
 		}
+		// No launcher activity, but a profile-side action entry (HyperOS Settings): LauncherApps cannot
+		// start it across users, so the profile fires the explicit intent itself.
+		val entryAction = dualEntryAction(app)
+		if (entryAction != null && hasLauncherActivity(app) != true) return launchViaProfileEntry(context, app, entryAction)
 		// Suspended counts as frozen too (hybrid freeze): ensureAppFreeToLaunch lifts both hide and
 		// suspend, but we must route here when EITHER is set — a suspended app won't launch otherwise.
 		if (app.isHidden || app.isSuspended) unfreezeAndLaunch(context, app)
 		else toastLaunch(context, PrismManager.launchApp(context, app.packageName, app.user), app.label.toString(), app.packageName)
+	}
+
+	/** Profile-side launch trampoline shared with profile shortcuts: the profile stores the validated
+	 *  request, PrismSpace's own entry activity in the profile consumes it and starts the target. */
+	private fun launchViaProfileEntry(context: Context, app: PrismAppInfo, action: String) {
+		val pkg = app.packageName
+		if (app.isHidden || app.isSuspended) {
+			val ready = runProfileBridgeOperation(context, TAG, "unfreeze before entry launch pkg=$pkg",
+				target = BridgeTargets.profile(app.user.toId()), timeoutMs = DEFAULT_SYNC_TIMEOUT_MS, command = EnsureAppFreeToLaunch(pkg))
+			if (ready !is ProfileBridgeResult.Value || !ready.value.isNullOrEmpty())
+				return toastLaunch(context, LaunchResult.Unknown("entry_unfreeze_failed"), app.label.toString(), pkg)
+		}
+		val prepared = runProfileBridgeOperation(context, TAG, "prepare entry launch pkg=$pkg action=$action",
+			target = BridgeTargets.profile(app.user.toId()), timeoutMs = DEFAULT_SYNC_TIMEOUT_MS,
+			command = PrepareProfileShortcutLaunch(pkg, action, null, emptyList()))
+		val started = prepared is ProfileBridgeResult.Value && prepared.value == true && ProfileEntryLauncher.start(context, app.user)
+		DiagnosticLog.i(TAG, "entry_launch pkg=$pkg action=$action started=$started")
+		if (started) return
+		runProfileBridgeOperation(context, TAG, "cancel entry launch pkg=$pkg",
+			target = BridgeTargets.profile(app.user.toId()), command = CancelProfileShortcutLaunch)
+		if (prepared !is ProfileBridgeResult.Value) toastBridgeFailure(context, prepared)
+		else toastLaunch(context, LaunchResult.Unknown("entry_launch_failed"), app.label.toString(), pkg)
 	}
 
 	private fun unfreezeAndLaunch(context: Context, app: PrismAppInfo) {

@@ -234,10 +234,17 @@ public class PrismProvisioning extends IntentService {
 			} else Log.i(TAG, "Post-provision migration already current at " + state);
 			// System app availability is a runtime invariant, not a migration: the policy keeps critical
 			// packages available on every pass, seeds existing spaces once and only writes changed targets.
-			SystemAppPolicyRuntime.converge(context, policies, ConvergeReason.Incremental, state);
+			// While the initial provisioning still runs it owns convergence (provision / repair pass): an
+			// early pass raced it on HyperOS and failed to suspend a package that the provision pass then
+			// handled (device evidence 9.6).
+			if (shouldConvergeIncrementally(state)) SystemAppPolicyRuntime.converge(context, policies, ConvergeReason.Incremental, state);
 		} catch (final RuntimeException e) {
 			Analytics.$().logAndReport(TAG, "Error provisioning profile", e);
 		}
+	}
+
+	static boolean shouldConvergeIncrementally(final int state) {
+		return state >= FIRST_COMPLETED_POST_PROVISION_REV;
 	}
 
 	static boolean shouldRunOneTimePostProvisionMigration(final int state, final int revision) {

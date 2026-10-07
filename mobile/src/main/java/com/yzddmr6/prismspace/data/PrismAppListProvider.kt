@@ -140,6 +140,7 @@ class PrismAppListProvider : AppListProvider<PrismAppInfo>() {
 					// Policy state is profile-side truth; the parent only caches it per snapshot.
 					mPolicyHidden[profile] = entries.filter(ProfileAppEntry::policyHidden).mapTo(HashSet(), ProfileAppEntry::packageName)
 					mLauncherEntries[profile] = entries.filter(ProfileAppEntry::launcherEntry).mapTo(HashSet(), ProfileAppEntry::packageName)
+					mEntryActions[profile] = entries.mapNotNull { e -> e.entryAction?.let { e.packageName to it } }.toMap()
 				}?.asSequence()?.map(ProfileAppEntry::toApplicationInfo)
 				is ShuttleOutcome.NotReady -> null.also {
 					Log.w(TAG, "Unable to refresh profile apps user=${profile.toId()}: shuttle not ready ${outcome.cause}")
@@ -233,6 +234,9 @@ class PrismAppListProvider : AppListProvider<PrismAppInfo>() {
 	/** Enabled launcher entry from the last profile snapshot; null when no snapshot covers [profile]. */
 	fun snapshotLauncherEntry(profile: UserHandle, pkg: String): Boolean? = mLauncherEntries[profile]?.contains(pkg)
 
+	/** Profile-side action that opens [pkg]'s UI when it has no launcher entry (e.g. HyperOS Settings). */
+	fun snapshotEntryAction(profile: UserHandle, pkg: String): String? = mEntryActions[profile]?.get(pkg)
+
 	/** Records the outcome of a system app policy change, then re-reads the touched packages. */
 	fun applyPolicyResult(profile: UserHandle, available: Collection<String>, unavailable: Collection<String>) {
 		mPolicyHidden.compute(profile) { _, current -> (current.orEmpty() - available.toSet() + unavailable).toHashSet() }
@@ -289,6 +293,7 @@ class PrismAppListProvider : AppListProvider<PrismAppInfo>() {
 	private val mLauncherApps by lazy { context().getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps }
 	private val mPolicyHidden = ConcurrentHashMap<UserHandle, Set<String>>()
 	private val mLauncherEntries = ConcurrentHashMap<UserHandle, Set<String>>()
+	private val mEntryActions = ConcurrentHashMap<UserHandle, Map<String, String>>()
 	private val mCriticalSystemPackages by lazy { SystemAppsManager.detectCriticalSystemPackages(context().packageManager) }
 
 	companion object {
@@ -346,6 +351,7 @@ internal object MobileAppListPort : AppListPort {
             splitSourceDirs = splitSourceDirs?.toList().orEmpty(),
             launcherEntry = packageName in policy.enabledLauncherPackages,
             policyHidden = packageName in policy.policyHidden,
+            entryAction = policy.entryActions[packageName],
         )
     }
 }

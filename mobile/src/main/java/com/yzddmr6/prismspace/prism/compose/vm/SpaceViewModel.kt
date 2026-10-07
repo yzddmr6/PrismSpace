@@ -83,6 +83,8 @@ internal data class SpaceAppInput(
     val launchability: AppLaunchability? = null,
     /** Dual segment: a system package the space's policy keeps out ("not added"). */
     val policyHidden: Boolean = false,
+    /** Dual segment: opened through this action inside the profile (no launcher entry). */
+    val entryAction: String? = null,
 )
 
 /** The row's single next-step action rendered as its inline button; null = no action row button. */
@@ -123,6 +125,8 @@ data class SpaceRow(
     val cloneStateKnown: Boolean = true,
     val launchability: AppLaunchability = if (launchable) AppLaunchability.Launchable else AppLaunchability.NoLauncherEntry,
     val policyHidden: Boolean = false,
+    /** Opened through a profile-side action rather than a launcher activity (no pinned shortcut). */
+    val entryAction: String? = null,
 )
 
 /** What the dual-segment action sheet offers for a system package's membership in the space. */
@@ -206,6 +210,7 @@ internal fun mapRows(inputs: List<SpaceAppInput>, res: StringResolver): List<Spa
         cloneStateKnown = app.cloneStateKnown,
         launchability = launchability,
         policyHidden = app.policyHidden,
+        entryAction = app.entryAction,
     )
 }
 
@@ -1144,6 +1149,7 @@ class SpaceViewModel(app: Application, private val savedState: SavedStateHandle)
                 critical = app.isCritical, userId = space.userId, iconVersion = app.sourceDir.orEmpty(),
                 launchability = launchability,
                 policyHidden = segment == SpaceSegment.Dual && app.isHiddenSysPrismAppTreatedAsDisabled,
+                entryAction = if (segment == SpaceSegment.Dual) dualEntryAction(app) else null,
             )
         }
         val normal = apps.filter { app ->
