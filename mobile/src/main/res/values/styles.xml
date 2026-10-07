@@ -31,6 +31,14 @@
         <item name="android:gravity">start</item>
     </style>
 
+    <!-- Share receiver: a transparent window whose only content is the Compose transfer sheet. -->
+    <style name="AppTheme.TransferSheet" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
+
     <style name="SetupTheme" parent="AppTheme.NoActionBar">
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:navigationBarColor">@color/prism_surface</item>

@@ -1,491 +1,63 @@
 package com.yzddmr6.prismspace.prism.ui
 
-import android.app.Activity
-import android.app.AlertDialog
-import android.app.ProgressDialog
 import android.content.Context
 import android.content.Intent
-import android.content.ClipData
 import android.net.Uri
 import android.os.Bundle
-import android.provider.OpenableColumns
-import com.yzddmr6.prismspace.analytics.DiagnosticLog
-import android.widget.Toast
-import com.yzddmr6.prismspace.mobile.R
-import com.yzddmr6.prismspace.prism.compose.vm.isImageMime
-import com.yzddmr6.prismspace.prism.service.TransferHistoryStore
-import com.yzddmr6.prismspace.prism.service.FileBridgeService
-import com.yzddmr6.prismspace.prism.service.FileTransferFailureReason
-import com.yzddmr6.prismspace.prism.service.FileTransferResult
-import com.yzddmr6.prismspace.prism.service.TransferCancellationSignal
-import com.yzddmr6.prismspace.prism.service.TransferDirection
-import com.yzddmr6.prismspace.prism.service.TransferSource
-import com.yzddmr6.prismspace.prism.service.openFirstReadableCandidate
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.viewModels
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.yzddmr6.prismspace.prism.compose.component.TransferSheetHost
+import com.yzddmr6.prismspace.prism.compose.theme.PrismTheme
+import com.yzddmr6.prismspace.prism.compose.vm.TransferSheetViewModel
 import com.yzddmr6.prismspace.util.PrismLocale
-import com.yzddmr6.prismspace.util.Users
-import com.yzddmr6.prismspace.util.Users.Companion.toId
-import java.io.File
-import java.net.URLDecoder
-import java.nio.charset.StandardCharsets
 
 /**
- * Unified file-transfer receiver (bidirectional, normal permissions). PrismSpace is installed in
- * both the main and dual spaces. Vendor share proxies do not reliably preserve the Personal/Work
- * tab as the receiving user, so the in-app destination choice is the authoritative target.
+ * The exported share target "Send to other space" (class name kept: the system share sheet ranks
+ * and pins targets by component name).
  *
- * Why share (not SAF): some ROMs intercept the document picker across profile boundaries. If a
- * vendor proxy drops the source user qualifier, reads retry only against the verified paired
- * PrismSpace user; Android's URI grant remains the permission boundary.
+ * Every launch from outside PrismSpace — the system share sheet or any explicit SEND /
+ * SEND_MULTIPLE intent — passes the one-time Confirm state before anything is written. No intent
+ * extra is read, so no caller can skip that confirmation. The target space is derived from the
+ * user that owns each source URI, never from the user this Activity happens to run in.
  *
- * Cross-space transfers stream the granted URI directly into the destination session. A private
- * cache file is created lazily only for the local CREATE_DOCUMENT branch, whose picker temporarily
- * leaves this Activity.
+ * Hosts the Compose [TransferSheetHost]; leaving the screen cancels a running batch and finishes.
  */
-class ImportToSpaceActivity : Activity() {
+class ImportToSpaceActivity : ComponentActivity() {
+
+    private val vm: TransferSheetViewModel by viewModels()
 
     override fun attachBaseContext(newBase: Context) = super.attachBaseContext(PrismLocale.wrap(newBase))
 
-    private data class PendingImport(
-        val sourceUris: List<Uri>,
-        val displayName: String,
-        val mime: String,
-        val declaredSize: Long?,
-        val isImage: Boolean,
-        var cachedFile: File? = null,
-    )
-
-    private val pending = mutableListOf<PendingImport>()
-    private var saveAsIndex = 0
-    private var saveAsSuccesses = 0
-    private var saveAsLastFailure: String? = null
-    private var activeCancellation: TransferCancellationSignal? = null
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val uris = receivedUris()
-        if (uris.isEmpty()) {
-            DiagnosticLog.w(TAG, "import receive failed reason=no_uri")
-            toast(getString(R.string.lz_io_no_file))
-            finish()
-            return
-        }
-        Thread {
-            uris.forEachIndexed { index, uri ->
-                try {
-                    val sourceUris = SourceUriPlanner.candidates(uri, pairedSourceUserId())
-                    val mime = intent?.type?.takeUnless { it == "*/*" }
-                        ?: queryMimeType(sourceUris) ?: "application/octet-stream"
-                    val metadata = queryMetadata(sourceUris)
-                    val displayName = metadata.first
-                        ?: uri.lastPathSegment?.substringAfterLast('/') ?: "file"
-                    DiagnosticLog.i(TAG, "import receive start index=$index name=$displayName mime=$mime uri=$uri")
-                    pending += PendingImport(sourceUris, displayName, mime, metadata.second, isImageMime(mime))
-                } catch (e: Throwable) {
-                    DiagnosticLog.w(TAG, "import receive failed index=$index reason=SourceUnreadable", e)
-                }
-            }
-            runOnUiThread {
-                if (pending.isEmpty()) {
-                    toast(getString(R.string.lz_io_cant_read))
-                    finish()
-                } else if (intent.getBooleanExtra(CrossSpaceTransferEntry.EXTRA_FORCE_OTHER_SPACE, false)) {
-                    runBatch(toOtherSpace = true)
-                } else showDestinationDialog()
-            }
-        }.apply { name = "Prism-import-metadata" }.start()
-    }
-
-    private fun receivedUris(): List<Uri> {
-        val result = mutableListOf<Uri>()
-        @Suppress("DEPRECATION")
-        if (intent?.action == Intent.ACTION_SEND_MULTIPLE) {
-            intent?.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.let(result::addAll)
-        } else {
-            intent?.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let(result::add)
-        }
-        intent?.clipData?.let { clip ->
-            for (i in 0 until clip.itemCount) clip.getItemAt(i).uri?.let(result::add)
-        }
-        return result.distinct()
-    }
-
-    private fun showDestinationDialog() {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.lz_io_choose_target)
-            .setItems(arrayOf(
-                getString(R.string.lz_io_target_here),
-                getString(R.string.lz_io_target_save_as),
-                getString(R.string.lz_io_target_other_space),
-            )) { _, which ->
-                when (which) {
-                    0 -> runBatch(toOtherSpace = false)
-                    1 -> saveAsNext()
-                    2 -> runBatch(toOtherSpace = true)
-                }
-            }
-            .setOnCancelListener {
-                DiagnosticLog.i(TAG, "import receive done result=cancelled stage=target")
-                cleanupAndFinish()
-            }
-            .show()
-    }
-
-    private fun runBatch(toOtherSpace: Boolean) {
-        val cancellation = TransferCancellationSignal()
-        activeCancellation = cancellation
-        @Suppress("DEPRECATION")
-        val progress = ProgressDialog(this).apply {
-            setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
-            max = 100
-            isIndeterminate = true
-            setMessage(getString(R.string.lz_io_transfer_progress, pending.size))
-            setCancelable(true)
-            setOnCancelListener { cancellation.cancel() }
-            show()
-        }
-        Thread {
-            val service = FileBridgeService()
-            val results = runCancellableTransferQueue(pending, cancellation) { index, item ->
-                updateProgress(progress, index, item, 0L)
-                var lastPercent = -1
-                val onProgress: (Long) -> Unit = { written ->
-                    transferProgressPercent(item.declaredSize, written)?.let { percent ->
-                        if (percent != lastPercent) {
-                            lastPercent = percent
-                            updateProgress(progress, index, item, written)
-                        }
-                    }
-                }
-                val result = if (toOtherSpace) {
-                    val direction = if (Users.isParentProfile()) TransferDirection.ToProfile else TransferDirection.ToMain
-                    val source = TransferSource.fromUriCandidates(
-                        contentResolver, item.sourceUris, item.displayName, item.mime, item.declaredSize,
-                    )
-                    service.transferToOtherSpace(this, source, direction, cancellation, onProgress)
-                } else {
-                    val localFile = item.cachedFile
-                        ?: copyToCache(item.sourceUris, index)?.also { item.cachedFile = it }
-                    if (localFile == null) {
-                        FileTransferResult(
-                            false,
-                            getString(R.string.fb_transfer_source_unreadable),
-                            item.displayName,
-                            failureReason = FileTransferFailureReason.SourceUnreadable,
-                        )
-                    } else {
-                        service.saveInCurrentSpace(
-                            this, localFile, item.displayName, item.mime, cancellation, onProgress,
-                        )
-                    }
-                }
-                if (result.success) {
-                    DiagnosticLog.i(TAG, "import receive done index=$index result=success otherSpace=$toOtherSpace name=${item.displayName}")
-                } else {
-                    DiagnosticLog.w(TAG, "import receive failed index=$index reason=${result.failureReason} otherSpace=$toOtherSpace name=${item.displayName}")
-                }
-                result
-            }
-            runOnUiThread {
-                activeCancellation = null
-                if (isDestroyed) return@runOnUiThread
-                progress.dismiss()
-                val successes = results.count { it.success }
-                val lastFailure = results.lastOrNull { !it.success }?.message
-                val message = when {
-                    cancellation.isCancelled() -> getString(R.string.lz_io_cancelled)
-                    successes == pending.size -> getString(R.string.lz_io_batch_done, successes)
-                    else -> getString(R.string.lz_io_batch_partial, successes, pending.size, lastFailure.orEmpty())
-                }
-                toast(message)
-                cleanupAndFinish()
-            }
-        }.apply { name = "Prism-import-transfer" }.start()
-    }
-
-    @Suppress("DEPRECATION")
-    private fun updateProgress(progress: ProgressDialog, index: Int, item: PendingImport, written: Long) {
-        val percent = transferProgressPercent(item.declaredSize, written)
-        runOnUiThread {
-            if (isDestroyed) return@runOnUiThread
-            progress.setMessage(getString(R.string.lz_io_transfer_item_progress, index + 1, pending.size, item.displayName))
-            progress.isIndeterminate = percent == null
-            if (percent != null) progress.progress = percent
-        }
-    }
-
-    private fun saveAsNext() {
-        if (saveAsIndex >= pending.size) {
-            val complete = saveAsSuccesses == pending.size
-            DiagnosticLog.i(
-                TAG,
-                "import receive done result=${if (complete) "success" else "partial"} " +
-                    "branch=save_as success=$saveAsSuccesses total=${pending.size}",
-            )
-            toast(
-                if (complete) getString(R.string.lz_io_batch_done, saveAsSuccesses)
-                else getString(
-                    R.string.lz_io_batch_partial,
-                    saveAsSuccesses,
-                    pending.size,
-                    saveAsLastFailure.orEmpty(),
-                )
-            )
-            cleanupAndFinish()
-            return
-        }
-        val item = pending[saveAsIndex]
-        if (item.cachedFile == null) {
-            val index = saveAsIndex
-            Thread {
-                val cached = copyToCache(item.sourceUris, index)
-                runOnUiThread {
-                    if (cached == null) {
-                        saveAsLastFailure = getString(R.string.fb_transfer_source_unreadable)
-                        saveAsIndex++
-                    } else {
-                        item.cachedFile = cached
-                    }
-                    saveAsNext()
-                }
-            }.apply { name = "Prism-import-save-as-cache" }.start()
-            return
-        }
-        try {
-            startActivityForResult(
-                ImportDestinationPlanner.buildCreateDocumentIntent(item.displayName, item.mime),
-                REQ_CREATE_DOCUMENT,
-            )
-        } catch (e: Throwable) {
-            DiagnosticLog.w(TAG, "import receive failed index=$saveAsIndex reason=TargetWriteFailed branch=save_as", e)
-            toast(getString(R.string.lz_io_failed, e.message ?: e.javaClass.simpleName))
-            cleanupAndFinish()
-        }
-    }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != REQ_CREATE_DOCUMENT) return
-        val item = pending.getOrNull(saveAsIndex) ?: return cleanupAndFinish()
-        val target = data?.data
-        if (resultCode != RESULT_OK || target == null) {
-            DiagnosticLog.i(TAG, "import receive done index=$saveAsIndex result=cancelled branch=save_as")
-            saveAsLastFailure = getString(R.string.lz_io_cancelled)
-            saveAsIndex++
-            saveAsNext()
-            return
-        }
-        try {
-            writeToDocument(target, requireNotNull(item.cachedFile))
-            val location = ImportDestinationPlanner.displayLocationForCreatedDocument(target.toString())
-            TransferHistoryStore.record(this, item.displayName, location, item.isImage)
-            saveAsSuccesses++
-            DiagnosticLog.i(TAG, "import receive done index=$saveAsIndex result=success branch=save_as name=${item.displayName} target=$target")
-        } catch (e: Throwable) {
-            DiagnosticLog.w(TAG, "import receive failed index=$saveAsIndex reason=TargetWriteFailed branch=save_as", e)
-            saveAsLastFailure = getString(R.string.lz_io_failed, e.message ?: e.javaClass.simpleName)
-        }
-        saveAsIndex++
-        saveAsNext()
-    }
-
-    private fun cleanupAndFinish() {
-        pending.forEach { it.cachedFile?.delete() }
-        pending.clear()
-        finish()
-    }
-
-    /** Copy the first readable source candidate into a private cache temp. */
-    private fun copyToCache(sourceUris: List<Uri>, index: Int): File? {
-        val dir = File(cacheDir, "import").apply { mkdirs() }
-        val out = File(dir, "in_${System.currentTimeMillis()}_$index")
-        return try {
-            val opened = openFirstReadableCandidate(sourceUris) { contentResolver.openInputStream(it) }
-            if (opened.index > 0) {
-                DiagnosticLog.i(
-                    TAG,
-                    "source URI opened with paired-user fallback authority=${opened.candidate.encodedAuthority}",
-                )
-            }
-            opened.stream.use { input ->
-                out.outputStream().use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        val read = input.read(buffer)
-                        if (read < 0) break
-                        output.write(buffer, 0, read)
-                    }
-                }
-            }
-            out
-        } catch (_: Throwable) {
-            out.delete()
-            null
-        }
-    }
-
-    /** Stream [src] into the user-created document. */
-    private fun writeToDocument(targetUri: Uri, src: File) {
-        contentResolver.openOutputStream(targetUri).use { output ->
-            src.inputStream().use { input ->
-                val buffer = ByteArray(64 * 1024)
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read < 0) break
-                    output!!.write(buffer, 0, read)
-                }
+        vm.startExternal(receivedUris(intent), intent?.type)
+        lifecycle.addObserver(LifecycleEventObserver { _, event ->
+            // The receiver is excludeFromRecents: once the user leaves, nothing could bring it back.
+            if (event == Lifecycle.Event.ON_STOP && !isChangingConfigurations && !isFinishing) finish()
+        })
+        setContent {
+            PrismTheme {
+                TransferSheetHost(vm, onClosed = { finish() })
             }
         }
     }
-
-    private fun queryMimeType(sourceUris: List<Uri>): String? = sourceUris.firstNotNullOfOrNull { uri ->
-        runCatching { contentResolver.getType(uri) }.getOrNull()
-    }
-
-    private fun queryMetadata(sourceUris: List<Uri>): Pair<String?, Long?> {
-        sourceUris.forEach { uri ->
-            val metadata = runCatching {
-                contentResolver.query(
-                    uri,
-                    arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
-                    null,
-                    null,
-                    null,
-                )?.use { c ->
-                    if (!c.moveToFirst()) return@use null
-                    val nameIndex = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    val sizeIndex = c.getColumnIndex(OpenableColumns.SIZE)
-                    val name = if (nameIndex >= 0) c.getString(nameIndex) else null
-                    val size = if (sizeIndex >= 0 && !c.isNull(sizeIndex)) {
-                        c.getLong(sizeIndex).takeIf { it >= 0L }
-                    } else null
-                    name to size
-                }
-            }.getOrNull()
-            if (metadata != null) return metadata
-        }
-        return null to null
-    }
-
-    private fun pairedSourceUserId(): Int? = if (Users.isParentProfile()) {
-        Users.profile?.toId()
-    } else {
-        runCatching { Users.parentProfile.toId() }.getOrNull()
-    }
-
-    override fun onStop() {
-        activeCancellation?.cancel()
-        super.onStop()
-    }
-
-    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
 
     private companion object {
-        private const val TAG = "Prism.ImportToSpace"
-        private const val REQ_CREATE_DOCUMENT = 4201
-    }
-}
-
-internal fun <T> runCancellableTransferQueue(
-    items: List<T>,
-    cancellation: TransferCancellationSignal,
-    transfer: (index: Int, item: T) -> FileTransferResult,
-): List<FileTransferResult> {
-    val results = ArrayList<FileTransferResult>(items.size)
-    for ((index, item) in items.withIndex()) {
-        if (cancellation.isCancelled()) break
-        results += transfer(index, item)
-    }
-    return results
-}
-
-internal fun transferProgressPercent(declaredSize: Long?, written: Long): Int? = when {
-    declaredSize == null || declaredSize <= 0L -> null
-    else -> ((written.toDouble() / declaredSize) * 100).toInt().coerceIn(0, 100)
-}
-
-internal object CrossSpaceTransferEntry {
-    const val EXTRA_FORCE_OTHER_SPACE = "com.yzddmr6.prismspace.extra.FORCE_OTHER_SPACE"
-
-    fun launch(context: Context, uris: List<Uri>) {
-        if (uris.isEmpty()) return
-        val clip = ClipData.newUri(context.contentResolver, "PrismSpace transfer", uris.first()).apply {
-            uris.drop(1).forEach { addItem(ClipData.Item(it)) }
+        @Suppress("DEPRECATION")
+        fun receivedUris(intent: Intent?): List<Uri> {
+            val result = mutableListOf<Uri>()
+            if (intent?.action == Intent.ACTION_SEND_MULTIPLE) {
+                runCatching { intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM) }.getOrNull()?.let(result::addAll)
+            } else {
+                runCatching { intent?.getParcelableExtra<Uri>(Intent.EXTRA_STREAM) }.getOrNull()?.let(result::add)
+            }
+            intent?.clipData?.let { clip ->
+                for (i in 0 until clip.itemCount) clip.getItemAt(i).uri?.let(result::add)
+            }
+            return result.distinct()
         }
-        val intent = Intent(if (uris.size > 1) Intent.ACTION_SEND_MULTIPLE else Intent.ACTION_SEND)
-                .setClass(context, ImportToSpaceActivity::class.java)
-                .setType("*/*")
-                .putExtra(EXTRA_FORCE_OTHER_SPACE, true)
-                .apply {
-                    clipData = clip
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-        if (uris.size > 1) intent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
-        else intent.putExtra(Intent.EXTRA_STREAM, uris.first())
-        context.startActivity(intent)
     }
 }
-
-internal object SourceUriPlanner {
-    fun qualifiedAuthority(authority: String?, pairedUserId: Int?): String? = when {
-        authority.isNullOrBlank() || pairedUserId == null || pairedUserId < 0 || '@' in authority -> null
-        else -> "$pairedUserId@$authority"
-    }
-
-    fun candidates(uri: Uri, pairedUserId: Int?): List<Uri> {
-        if (uri.scheme != "content") return listOf(uri)
-        val qualifiedAuthority = qualifiedAuthority(uri.encodedAuthority, pairedUserId) ?: return listOf(uri)
-        return listOf(uri, uri.buildUpon().encodedAuthority(qualifiedAuthority).build())
-    }
-}
-
-internal object ImportDestinationPlanner {
-    fun createDocumentIntentSpec(displayName: String, mimeType: String): CreateDocumentIntentSpec =
-        CreateDocumentIntentSpec(
-            action = Intent.ACTION_CREATE_DOCUMENT,
-            type = mimeType,
-            title = displayName,
-            categories = setOf(Intent.CATEGORY_OPENABLE),
-            flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-        )
-
-    fun buildCreateDocumentIntent(displayName: String, mimeType: String): Intent {
-        val spec = createDocumentIntentSpec(displayName, mimeType)
-        return Intent(spec.action)
-            .setType(spec.type)
-            .putExtra(Intent.EXTRA_TITLE, spec.title)
-            .addFlags(spec.flags)
-            .also { intent -> spec.categories.forEach(intent::addCategory) }
-    }
-
-    fun displayLocationForCreatedDocument(uriString: String): String {
-        documentIdFrom(uriString)?.let { docId ->
-            val path = docId.substringAfter(':', docId)
-            val parent = path.substringBeforeLast('/', "")
-            if (parent.isNotBlank()) return parent
-        }
-        return authorityFrom(uriString)
-    }
-
-    private fun documentIdFrom(uriString: String): String? {
-        val encodedDocumentId = uriString
-            .substringAfter("/document/", missingDelimiterValue = "")
-            .substringBefore('?')
-            .substringBefore('#')
-        return URLDecoder.decode(encodedDocumentId, StandardCharsets.UTF_8.name()).takeIf { it.isNotBlank() }
-    }
-
-    private fun authorityFrom(uriString: String): String =
-        uriString
-            .substringAfter("://", missingDelimiterValue = "")
-            .substringBefore('/')
-            .substringBefore('?')
-            .substringBefore('#')
-}
-
-internal data class CreateDocumentIntentSpec(
-    val action: String,
-    val type: String,
-    val title: String,
-    val categories: Set<String>,
-    val flags: Int,
-)
