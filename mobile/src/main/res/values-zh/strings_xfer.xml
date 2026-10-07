@@ -63,4 +63,5 @@
     <string name="lz_xfer_share_gate_missing">请先创建双开空间，然后再继续分享</string>
     <string name="lz_xfer_share_gate_unknown">请先在设置中修复双开空间，然后再继续分享</string>
     <string name="lz_xfer_clone_notice">本机有系统级双开应用；若分享面板里选择主空间应用后卡住，请改用 PrismSpace 的『发到另一空间』再『在另一空间继续分享』。</string>
+    <string name="lz_xfer_open_unrecorded">该记录已在%1$s中移除，无法在那里打开</string>
 </resources>

@@ -47,28 +47,26 @@ class TransferOpenPlannerTest {
     }
 
     @Test fun receivedRowsOpenLocally() {
-        assertEquals(OpenRoute.Local, TransferOpenPlanner.planOpenRoute(TransferRole.Received, 0, 36, true, SpaceActionGate(false, "x")))
+        assertEquals(OpenRoute.Local, TransferOpenPlanner.planOpenRoute(TransferRole.Received, 0, SpaceActionGate(false, "x")))
+        assertEquals(OpenRoute.Local, TransferOpenPlanner.planOpenRoute(TransferRole.Received, null, null))
     }
 
-    @Test fun sentRowsUsePlatformCrossProfileStartWhenAllowed() {
-        val usable = SpaceActionGate(true, null)
-        assertEquals(OpenRoute.CrossProfileStart(23), TransferOpenPlanner.planOpenRoute(TransferRole.Sent, 23, 30, true, usable))
-        assertEquals(OpenRoute.QueuedEntry(23), TransferOpenPlanner.planOpenRoute(TransferRole.Sent, 23, 30, false, usable))
-        assertEquals(OpenRoute.QueuedEntry(23), TransferOpenPlanner.planOpenRoute(TransferRole.Sent, 23, 29, true, usable))
+    @Test fun sentRowsAreForwardedToTheOwner() {
+        assertEquals(OpenRoute.Forwarded(23), TransferOpenPlanner.planOpenRoute(TransferRole.Sent, 23, SpaceActionGate(true, null)))
         // Inside the dual space no gate is computable; the main space is necessarily running.
-        assertEquals(OpenRoute.CrossProfileStart(0), TransferOpenPlanner.planOpenRoute(TransferRole.Sent, 0, 36, true, null))
+        assertEquals(OpenRoute.Forwarded(0), TransferOpenPlanner.planOpenRoute(TransferRole.Sent, 0, null))
     }
 
     @Test fun closedGateBlocksWithItsGuidance() {
         assertEquals(
             OpenRoute.Blocked("resume first"),
-            TransferOpenPlanner.planOpenRoute(TransferRole.Sent, 23, 36, true, SpaceActionGate(false, "resume first")),
+            TransferOpenPlanner.planOpenRoute(TransferRole.Sent, 23, SpaceActionGate(false, "resume first")),
         )
     }
 
-    @Test fun requestSurvivesTheBridgeRoundTrip() {
-        val request = TransferOpenRequest("id", OpenMode.File, "content://media/1", "image/png", "Pictures/PrismSpace")
-        assertEquals(request, request.toDto().toOpenRequest())
+    @Test fun unknownOwnerIsBlocked() {
+        assertTrue(TransferOpenPlanner.planOpenRoute(TransferRole.Sent, null, SpaceActionGate(true, null)) is OpenRoute.Blocked)
+        assertTrue(TransferOpenPlanner.planOpenRoute(TransferRole.Sent, null, null) is OpenRoute.Blocked)
     }
 
     // ── Share ──
@@ -81,33 +79,30 @@ class TransferOpenPlannerTest {
 
     @Test fun shareFromTheOwningUserIsLocalEvenWhenTheGateIsClosed() {
         // Vendor share proxy: the receiver ran in the target user, so the files already live here.
-        assertEquals(OpenRoute.Local, TransferOpenPlanner.planShareRoute(0, 0, 36, false, SpaceActionGate(false, "x")))
-        assertEquals(OpenRoute.Local, TransferOpenPlanner.planShareRoute(24, 24, 29, true, null))
+        assertEquals(OpenRoute.Local, TransferOpenPlanner.planShareRoute(0, 0, SpaceActionGate(false, "x")))
+        assertEquals(OpenRoute.Local, TransferOpenPlanner.planShareRoute(24, 24, null))
     }
 
     @Test fun shareToTheOtherUserRoutesLikeOpeningASentRow() {
         val usable = SpaceActionGate(true, null)
         val closed = SpaceActionGate(false, "resume first")
-        val cases = listOf(
-            arrayOf<Any?>(24, 36, true, usable),
-            arrayOf<Any?>(24, 36, false, usable),
-            arrayOf<Any?>(24, 29, true, usable),
-            arrayOf<Any?>(24, 36, true, closed),
-            arrayOf<Any?>(null, 36, true, usable),
-            arrayOf<Any?>(null, 36, true, null),
-            arrayOf<Any?>(0, 36, true, null),
+        val cases = listOf<Pair<Int?, SpaceActionGate?>>(
+            24 to usable,
+            24 to closed,
+            null to usable,
+            null to null,
+            0 to null,
         )
-        cases.forEach { (owner, sdk, can, gate) ->
+        cases.forEach { (owner, gate) ->
             assertEquals(
-                TransferOpenPlanner.planOpenRoute(TransferRole.Sent, owner as Int?, sdk as Int, can as Boolean, gate as SpaceActionGate?),
-                TransferOpenPlanner.planShareRoute(owner, 10, sdk, can, gate),
+                TransferOpenPlanner.planOpenRoute(TransferRole.Sent, owner, gate),
+                TransferOpenPlanner.planShareRoute(owner, 10, gate),
             )
         }
-        assertEquals(OpenRoute.CrossProfileStart(24), TransferOpenPlanner.planShareRoute(24, 0, 36, true, usable))
-        assertEquals(OpenRoute.QueuedEntry(24), TransferOpenPlanner.planShareRoute(24, 0, 36, false, usable))
-        assertEquals(OpenRoute.QueuedEntry(24), TransferOpenPlanner.planShareRoute(24, 0, 29, true, usable))
-        assertEquals(OpenRoute.Blocked("resume first"), TransferOpenPlanner.planShareRoute(24, 0, 36, true, closed))
-        assertTrue(TransferOpenPlanner.planShareRoute(null, 0, 36, true, usable) is OpenRoute.Blocked)
+        assertEquals(OpenRoute.Forwarded(24), TransferOpenPlanner.planShareRoute(24, 0, usable))
+        assertEquals(OpenRoute.Forwarded(0), TransferOpenPlanner.planShareRoute(0, 24, null))
+        assertEquals(OpenRoute.Blocked("resume first"), TransferOpenPlanner.planShareRoute(24, 0, closed))
+        assertTrue(TransferOpenPlanner.planShareRoute(null, 0, usable) is OpenRoute.Blocked)
     }
 
     @Test fun oneItemIsSendAndMoreAreSendMultipleInRequestOrder() {
@@ -179,8 +174,10 @@ class TransferOpenPlannerTest {
         )
     }
 
-    @Test fun shareRequestSurvivesTheBridgeRoundTrip() {
-        val request = TransferOpenRequest("batch", OpenMode.Share, null, null, null, listOf(png, pdf))
-        assertEquals(request, request.toDto().toOpenRequest())
+    @Test fun keepPresentDropsItemsTheOwnerNoLongerRecords() {
+        assertEquals(
+            ShareFilter.Kept(listOf(pdf), 1),
+            TransferOpenPlanner.keepPresent(listOf(png, pdf), listOf(BridgeInspectResult.Unrecorded, BridgeInspectResult.Exists)),
+        )
     }
 }

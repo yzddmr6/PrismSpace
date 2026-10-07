@@ -16,7 +16,6 @@ import com.yzddmr6.prismspace.bridge.PublishedFileDto
 import com.yzddmr6.prismspace.bridge.RunBridgeSelfTest
 import com.yzddmr6.prismspace.bridge.SelfTestResultDto
 import com.yzddmr6.prismspace.bridge.TransferLedgerDto
-import com.yzddmr6.prismspace.bridge.TransferOpenRequestDto
 import com.yzddmr6.prismspace.bridge.WriteSessionDto
 import com.yzddmr6.prismspace.controller.ClonePreparationStore
 import com.yzddmr6.prismspace.mobile.R
@@ -26,12 +25,10 @@ import com.yzddmr6.prismspace.prism.transfer.MediaStorePublisher
 import com.yzddmr6.prismspace.prism.transfer.TransferKind
 import com.yzddmr6.prismspace.prism.transfer.TransferLedger
 import com.yzddmr6.prismspace.prism.transfer.TransferLedgerRecord
-import com.yzddmr6.prismspace.prism.transfer.TransferOpenRequests
 import com.yzddmr6.prismspace.prism.transfer.TransferOpener
 import com.yzddmr6.prismspace.prism.transfer.TransferPaths
 import com.yzddmr6.prismspace.prism.transfer.TransferRole
 import com.yzddmr6.prismspace.prism.transfer.toLedgerRecord
-import com.yzddmr6.prismspace.prism.transfer.toOpenRequest
 import com.yzddmr6.prismspace.prism.transfer.withPublished
 import com.yzddmr6.prismspace.util.DPM
 import com.yzddmr6.prismspace.util.DevicePolicies
@@ -433,11 +430,6 @@ internal object MobileFileBridgePort : FileBridgePort {
         mime: String?,
         mode: BridgeOpenMode,
     ): BridgeInspectResult = TransferOpener.inspect(context, contentUri, mime, mode)
-
-    override fun queueTransferOpen(context: Context, request: TransferOpenRequestDto): Boolean {
-        TransferOpenRequests.queue(context, request.toOpenRequest())
-        return true
-    }
 
     private fun BridgeFileStore.toCollection() = when (this) {
         BridgeFileStore.Downloads -> MediaCollection.Downloads

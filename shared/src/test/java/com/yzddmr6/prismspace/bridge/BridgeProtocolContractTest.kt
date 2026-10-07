@@ -126,7 +126,6 @@ class BridgeProtocolContractTest {
         val transferCommands = listOf(
             RecordTransfer::class.java,
             InspectTransferredFile::class.java,
-            QueueTransferOpen::class.java,
         )
         transferCommands.forEach { type ->
             val samples = BridgeCommandCatalog.all.filter { type.isInstance(it) }
@@ -134,7 +133,7 @@ class BridgeProtocolContractTest {
             assertTrue("${type.simpleName} must run in the user that owns the file", samples.single() is DestinationCommand<*>)
         }
         val dispatcher = File("src/main/java/com/yzddmr6/prismspace/bridge/BridgeDispatcher.kt").readText()
-        listOf("is RecordTransfer ->", "is InspectTransferredFile ->", "is QueueTransferOpen ->").forEach { branch ->
+        listOf("is RecordTransfer ->", "is InspectTransferredFile ->").forEach { branch ->
             assertTrue("dispatcher must route $branch", dispatcher.contains(branch))
         }
     }
@@ -157,6 +156,8 @@ class BridgeProtocolContractTest {
             "file.open_latest_for_read",
             "file.write_per_app_share_marker",
             "file.delete_per_app_share_marker",
+            // Cross-space open/share is forwarded by the system intent forwarder, never parked in a mailbox.
+            "file.queue_transfer_open",
         ).forEach { removed -> assertFalse("$removed must not come back", removed in ids) }
         assertEquals(listOf(CrossProfileForwardingKind.ProfileDownloads), CrossProfileForwardingKind.entries.toList())
     }
@@ -216,7 +217,6 @@ class BridgeProtocolContractTest {
             mime: String?,
             mode: BridgeOpenMode,
         ) = BridgeInspectResult.Exists
-        override fun queueTransferOpen(context: Context, request: TransferOpenRequestDto) = true
     }
 
     private object FakeAppListPort : AppListPort {

@@ -94,7 +94,7 @@ public class PrismProvisioning extends IntentService {
 	/** Provision type: 0 (default) - Managed provisioning, 1 - Manual provisioning */
 	private static final String PREF_KEY_PROFILE_PROVISION_TYPE = "profile.provision.type";
 	/** The revision for post-provisioning. Increase this const value if post-provisioning needs to be re-performed after upgrade. */
-	private static final int POST_PROVISION_REV = 12;
+	private static final int POST_PROVISION_REV = 13;
 	/** States below this value describe a fresh or still-running initial provisioning transaction. */
 	private static final int FIRST_COMPLETED_POST_PROVISION_REV = 3;
 	private static final String AFFILIATION_ID = "com.yzddmr6.prismspace";
@@ -228,7 +228,8 @@ public class PrismProvisioning extends IntentService {
 				// filters, so drop every filter owned by us before re-installing the corrected set.
 				policies.execute(DevicePolicyManager::clearCrossProfileIntentFilters);
 				startProfileOwnerPostProvisioning(context, policies);
-				prefs.edit().putInt(PREF_KEY_PROVISION_STATE, POST_PROVISION_REV).commit();
+				final boolean committed = prefs.edit().putInt(PREF_KEY_PROVISION_STATE, POST_PROVISION_REV).commit();
+				DiagnosticLog.INSTANCE.i(TAG, "post_provision_migration done from=" + state + " to=" + POST_PROVISION_REV + " committed=" + committed);
 			} else if (state < FIRST_COMPLETED_POST_PROVISION_REV) {
 				Log.i(TAG, "Initial profile provisioning owns state " + state + "; skipping incremental migration.");
 			} else Log.i(TAG, "Post-provision migration already current at " + state);
@@ -420,6 +421,9 @@ public class PrismProvisioning extends IntentService {
 		policies.addUserRestrictionIfNeeded(UserManager.ALLOW_PARENT_PROFILE_APP_LINKING);
 		CrossProfileIntentFiltersHelper.setFilters(policies);
 		enableAdditionalForwarding(context, policies);
+		// The single cross-space "open / share a transferred file" route (both directions) and its receivers.
+		TransferOpenForwarding.register(policies::addCrossProfileIntentFilter);
+		TransferOpenForwarding.setReceiverAliases(context);
 
 		// Prepare API
 		policies.addCrossProfileIntentFilter(IntentFilters.forAction(Api.latest.ACTION_FREEZE).withDataSchemes("package", "packages"), FLAG_MANAGED_CAN_ACCESS_PARENT);

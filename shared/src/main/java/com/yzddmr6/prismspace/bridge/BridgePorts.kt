@@ -48,7 +48,6 @@ interface FileBridgePort {
         mime: String?,
         mode: BridgeOpenMode,
     ): BridgeInspectResult
-    fun queueTransferOpen(context: Context, request: TransferOpenRequestDto): Boolean
 }
 
 interface AppListPort {

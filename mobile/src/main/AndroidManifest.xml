@@ -126,8 +126,8 @@
             </intent-filter>
         </activity>
 
-        <!-- Opens a transferred file / its folder inside the user that owns it. Started by PrismSpace in
-             the other space through CrossProfileApps (same package), so it is not exported. -->
+        <!-- Opens / shares a transferred file inside the user that owns it. Never started directly from
+             the other space: the cross-profile entry points are the two aliases below. -->
         <activity
             android:name="com.yzddmr6.prismspace.prism.transfer.TransferOpenActivity"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
@@ -135,6 +135,32 @@
             android:noHistory="true"
             android:taskAffinity=""
             android:exported="false" />
+
+        <!-- Cross-profile entry points: reached only through the system intent forwarder. Exported because the
+             forwarder starts them as the caller; every request is validated against the local ledger. One alias
+             per direction so each user holds exactly one local match (the dual space's profile owner disables
+             FromDual there and enables FromMain). -->
+        <activity-alias
+            android:name="com.yzddmr6.prismspace.prism.transfer.TransferOpenFromMain"
+            android:targetActivity="com.yzddmr6.prismspace.prism.transfer.TransferOpenActivity"
+            android:exported="true"
+            android:enabled="false">
+            <intent-filter>
+                <action android:name="com.yzddmr6.prismspace.action.TRANSFER_OPEN" />
+                <category android:name="com.yzddmr6.prismspace.category.MANAGED_PROFILE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name="com.yzddmr6.prismspace.prism.transfer.TransferOpenFromDual"
+            android:targetActivity="com.yzddmr6.prismspace.prism.transfer.TransferOpenActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.yzddmr6.prismspace.action.TRANSFER_OPEN" />
+                <category android:name="com.yzddmr6.prismspace.category.PARENT_PROFILE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
 
         <activity android:name="com.yzddmr6.prismspace.shortcut.PrismAppShortcut$ShortcutLauncher"
             android:hardwareAccelerated="false"

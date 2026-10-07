@@ -1,5 +1,6 @@
 package com.yzddmr6.prismspace.prism.service
 
+import com.yzddmr6.prismspace.engine.CrossProfile
 import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
 import org.junit.Assert.assertEquals
@@ -71,25 +72,68 @@ class ShareTargetManifestContractTest {
         return dir.listFiles().orEmpty().filter { it.extension == "kt" }.associate { it.name to it.readText() }
     }
 
-    /**
-     * "Continue sharing in the other space" must never launch a third-party app across users: in the
-     * transfer package the only cross-profile start is PrismSpace's own trampoline, and the code that
-     * opens viewers / the share sheet only starts activities in its own user.
-     */
-    @Test fun transferCrossProfileStartsOnlyTargetPrismSpaceItself() {
-        val sources = transferSources()
-        assertEquals(
-            setOf("TransferOpenCoordinator.kt"),
-            sources.filterValues { it.contains("CrossProfileApps::class") }.keys,
-        )
-        val coordinator = sources.getValue("TransferOpenCoordinator.kt")
-        val crossStarts = coordinator.lines().filter { it.contains("apps.startActivity(") }
-        assertEquals(1, crossStarts.size)
-        assertTrue(crossStarts.single().trim().startsWith("apps.startActivity(TransferOpenActivity.intent("))
-        sources.forEach { (name, text) -> assertFalse("$name must not start as another user", text.contains("startActivityAsUser")) }
+    private fun manifestRoot(): Element {
+        val manifest = listOf(File("src/main/AndroidManifest.xml"), File("mobile/src/main/AndroidManifest.xml")).first(File::isFile)
+        val factory = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }
+        return factory.newDocumentBuilder().parse(manifest).documentElement
+    }
 
-        val opener = sources.getValue("TransferOpener.kt")
-        assertFalse(opener.contains("startActivityAsUser"))
-        assertFalse(opener.contains("CrossProfileApps"))
+    /**
+     * The only cross-profile entries of TransferOpenActivity are the two aliases, one per direction:
+     * each carries exactly one PrismSpace profile category, so each user holds one local match.
+     */
+    @Test fun transferOpenAliasesAreTheOnlyCrossProfileEntries() {
+        val aliases = manifestRoot().children("activity-alias")
+            .filter { it.getAttributeNS(androidNs, "targetActivity") == "com.yzddmr6.prismspace.prism.transfer.TransferOpenActivity" }
+            .associateBy { it.getAttributeNS(androidNs, "name") }
+        assertEquals(setOf(CrossProfile.TRANSFER_OPEN_FROM_MAIN, CrossProfile.TRANSFER_OPEN_FROM_DUAL), aliases.keys)
+        val expectedCategories = mapOf(
+            CrossProfile.TRANSFER_OPEN_FROM_MAIN to setOf("android.intent.category.DEFAULT", CrossProfile.CATEGORY_MANAGED_PROFILE),
+            CrossProfile.TRANSFER_OPEN_FROM_DUAL to setOf("android.intent.category.DEFAULT", CrossProfile.CATEGORY_PARENT_PROFILE),
+        )
+        aliases.forEach { (name, alias) ->
+            assertEquals(name, "true", alias.getAttributeNS(androidNs, "exported"))
+            val filters = alias.children("intent-filter")
+            assertEquals(name, 1, filters.size)
+            assertEquals(name, listOf(CrossProfile.ACTION_TRANSFER_OPEN),
+                filters.single().children("action").map { it.getAttributeNS(androidNs, "name") })
+            assertEquals(name, expectedCategories.getValue(name),
+                filters.single().children("category").map { it.getAttributeNS(androidNs, "name") }.toSet())
+            assertTrue(name, filters.single().children("data").isEmpty())
+        }
+        // Main space default: FromMain off (it lives in the dual space), FromDual on (provisioning turns it off there).
+        assertEquals("false", aliases.getValue(CrossProfile.TRANSFER_OPEN_FROM_MAIN).getAttributeNS(androidNs, "enabled"))
+        assertFalse(aliases.getValue(CrossProfile.TRANSFER_OPEN_FROM_DUAL).hasAttributeNS(androidNs, "enabled"))
+    }
+
+    /**
+     * "Continue sharing in the other space" must never launch a third-party app across users: the
+     * transfer package starts nothing as another user and has no platform direct start; the only
+     * cross-space request is PrismSpace's own forwarded TRANSFER_OPEN.
+     */
+    @Test fun transferCrossSpaceStartsOnlyTargetPrismSpaceItself() {
+        val sources = transferSources()
+        sources.forEach { (name, text) ->
+            assertFalse("$name must not start as another user", text.contains("startActivityAsUser"))
+            assertFalse("$name must not use CrossProfileApps", text.contains("CrossProfileApps"))
+        }
+        val coordinator = sources.getValue("TransferOpenCoordinator.kt")
+        assertTrue(coordinator.contains("TransferOpenActivity.forwardIntent("))
+    }
+
+    /** One route only: no platform direct start, no grant prompt, no bridge mailbox, no entry-page drain. */
+    @Test fun mobileSourcesKeepTheSingleCrossSpaceRoute() {
+        val root = listOf(File("src/main"), File("mobile/src/main")).first(File::isDirectory)
+        val banned = listOf(
+            "CrossProfileApps", "TransferOpenRequests", "ParentEntryLauncher", "QueueTransferOpen",
+            "canInteractAcrossProfiles", "createRequestInteractAcrossProfilesIntent",
+        )
+        val offenders = root.walkTopDown().filter { it.isFile && it.extension in setOf("kt", "java") }
+            .flatMap { file -> val text = file.readText(); banned.filter { text.contains(it) }.map { "${file.name}:$it" } }
+            .toList()
+        assertEquals(emptyList<String>(), offenders)
+        val definitions = root.walkTopDown().filter { it.isFile && it.extension in setOf("kt", "java") }
+            .filter { it.readText().contains("\"com.yzddmr6.prismspace.action.TRANSFER_OPEN\"") }.toList()
+        assertEquals("ACTION_TRANSFER_OPEN is defined only in shared CrossProfile.kt", emptyList<File>(), definitions)
     }
 }

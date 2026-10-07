@@ -1,16 +1,18 @@
 package com.yzddmr6.prismspace.prism.transfer
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.ComponentName
 import android.content.Context
-import android.content.pm.CrossProfileApps
-import android.os.Build
+import android.content.Intent
+import android.content.pm.PackageManager.MATCH_DEFAULT_ONLY
+import android.content.pm.PackageManager.MATCH_DISABLED_COMPONENTS
 import androidx.annotation.WorkerThread
 import com.yzddmr6.prismspace.analytics.DiagnosticLog
 import com.yzddmr6.prismspace.bridge.BridgeInspectResult
 import com.yzddmr6.prismspace.bridge.BridgeOpenMode
-import com.yzddmr6.prismspace.bridge.BridgeTarget
 import com.yzddmr6.prismspace.bridge.InspectTransferredFile
-import com.yzddmr6.prismspace.bridge.QueueTransferOpen
+import com.yzddmr6.prismspace.engine.CrossProfile
 import com.yzddmr6.prismspace.mobile.R
 import com.yzddmr6.prismspace.prism.compose.space.SpaceRepositoryProvider
 import com.yzddmr6.prismspace.prism.compose.space.SpaceStateRepository
@@ -19,11 +21,9 @@ import com.yzddmr6.prismspace.prism.compose.vm.GateAction
 import com.yzddmr6.prismspace.prism.compose.vm.fileTransferGate
 import com.yzddmr6.prismspace.prism.compose.vm.prismResolver
 import com.yzddmr6.prismspace.prism.service.ProfileBridgeResult
-import com.yzddmr6.prismspace.prism.service.ProfileEntryLauncher
 import com.yzddmr6.prismspace.prism.service.profileBridgeFailureMessage
 import com.yzddmr6.prismspace.prism.service.runDestinationBridgeOperation
 import com.yzddmr6.prismspace.util.PrismLocale
-import com.yzddmr6.prismspace.util.UserHandles
 import com.yzddmr6.prismspace.util.Users
 import com.yzddmr6.prismspace.util.Users.Companion.toId
 import kotlinx.coroutines.Dispatchers
@@ -70,7 +70,8 @@ internal fun currentDualUsability(context: Context): SpaceUsability {
 
 /**
  * Caller side of "open folder / open file" for one ledger row. Received rows open here; Sent rows
- * live in the paired space and are executed by PrismSpace's own foreground activity there.
+ * live in the paired space and are executed by PrismSpace's own foreground activity there, reached
+ * through the one cross-space route: the system intent forwarder (profile owner's native route).
  * Blocking work runs on IO; activity starts happen on the caller's main thread.
  */
 internal object TransferOpenCoordinator {
@@ -110,12 +111,8 @@ internal object TransferOpenCoordinator {
         // space is necessarily running, and bridge failures are classified below.
         val usability = if (currentIsParent) withContext(Dispatchers.IO) { currentDualUsability(activity) } else null
         val gate = usability?.let { fileTransferGate(it, prismResolver(activity), GateAction.Open) }
-        val canInteract = canInteractAcrossProfiles(activity)
-        val route = TransferOpenPlanner.planOpenRoute(record.role, ownerUserId, Build.VERSION.SDK_INT, canInteract, gate)
-        DiagnosticLog.i(
-            TAG,
-            "open.route route=${route.logName()} sdk=${Build.VERSION.SDK_INT} canInteract=$canInteract gate=${usability ?: "-"}",
-        )
+        val route = TransferOpenPlanner.planOpenRoute(record.role, ownerUserId, gate)
+        DiagnosticLog.i(TAG, "open.route route=${route.logName()} mode=$mode gate=${usability ?: "-"}")
         if (route is OpenRoute.Blocked) return OpenOutcome.Blocked(route.guidance)
         val ownerId = ownerUserId ?: return OpenOutcome.Failed(failedText)
         val target = bridgeTargetFor(ownerId) ?: return OpenOutcome.Failed(failedText)
@@ -135,15 +132,13 @@ internal object TransferOpenCoordinator {
             when (result) {
                 BridgeInspectResult.Missing -> return OpenOutcome.Missing
                 BridgeInspectResult.NoViewer -> return OpenOutcome.NoViewer
+                BridgeInspectResult.Unrecorded -> return OpenOutcome.Failed(unrecordedMessage(activity, owner))
                 BridgeInspectResult.Exists -> Unit
                 null -> return OpenOutcome.Failed(profileBridgeFailureMessage(activity, inspected, failedText))
             }
         }
 
-        return when (val delivery = deliver(activity, request, route, owner, ownerId, target, failedText)) {
-            Delivery.Delivered -> OpenOutcome.Handoff(owner)
-            is Delivery.Failed -> OpenOutcome.Failed(delivery.message)
-        }
+        return if (forward(activity, request, currentIsParent, ownerId)) OpenOutcome.Handoff(owner) else OpenOutcome.Failed(failedText)
     }
 
     /**
@@ -174,12 +169,8 @@ internal object TransferOpenCoordinator {
         val gated = currentIsParent && ownerUserId != currentUserId
         val usability = if (gated) withContext(Dispatchers.IO) { currentDualUsability(activity) } else null
         val gate = usability?.let { fileTransferGate(it, prismResolver(activity), GateAction.Share) }
-        val canInteract = canInteractAcrossProfiles(activity)
-        val route = TransferOpenPlanner.planShareRoute(ownerUserId, currentUserId, Build.VERSION.SDK_INT, canInteract, gate)
-        DiagnosticLog.i(
-            TAG,
-            "xfer.share.route route=${route.logName()} sdk=${Build.VERSION.SDK_INT} canInteract=$canInteract gate=${usability ?: "-"}",
-        )
+        val route = TransferOpenPlanner.planShareRoute(ownerUserId, currentUserId, gate)
+        DiagnosticLog.i(TAG, "xfer.share.route route=${route.logName()} mode=Share gate=${usability ?: "-"}")
         when (route) {
             is OpenRoute.Blocked -> return ShareOutcome.Blocked(route.guidance)
             OpenRoute.Local -> {
@@ -191,7 +182,7 @@ internal object TransferOpenCoordinator {
                     OpenSurfaceResult.Failed -> ShareOutcome.Failed(failedText)
                 }
             }
-            is OpenRoute.CrossProfileStart, is OpenRoute.QueuedEntry -> Unit
+            is OpenRoute.Forwarded -> Unit
         }
         val ownerId = ownerUserId ?: return ShareOutcome.Failed(failedText)
         val target = bridgeTargetFor(ownerId) ?: return ShareOutcome.Failed(failedText)
@@ -222,10 +213,8 @@ internal object TransferOpenCoordinator {
         if (kept.items.isEmpty()) return ShareOutcome.Missing
 
         val request = TransferOpenRequest(handoffId, OpenMode.Share, null, null, null, kept.items)
-        return when (val delivery = deliver(activity, request, route, owner, ownerId, target, failedText)) {
-            Delivery.Delivered -> ShareOutcome.Handoff(owner, kept.dropped)
-            is Delivery.Failed -> ShareOutcome.Failed(delivery.message)
-        }
+        return if (forward(activity, request, currentIsParent, ownerId)) ShareOutcome.Handoff(owner, kept.dropped)
+        else ShareOutcome.Failed(failedText)
     }
 
     /** Ledger-row variant: a Sent file row, owned by the paired space (same owner rule as [open]). */
@@ -237,67 +226,54 @@ internal object TransferOpenCoordinator {
         return share(activity, ShareOrigin.Ledger, owner, ownerUserId, listOf(ShareItem(uri, record.mime)), record.id)
     }
 
-    private sealed interface Delivery {
-        data object Delivered : Delivery
-        data class Failed(val message: String) : Delivery
-    }
-
     /**
-     * Hands [request] to PrismSpace in [ownerId]: a platform cross-profile start of its own trampoline
-     * when [route] allows, otherwise the request is parked over the bridge and the owner's entry screen
-     * is launched to drain it.
+     * The one route: the system intent forwarder delivers [request] (extras only) to PrismSpace in
+     * [ownerId]. Main -> dual names the forwarder explicitly when it can be resolved here (no local
+     * chooser even if a vendor adds a match; the forwarder clears the component itself), else starts
+     * implicitly (the FromMain alias is disabled in the main space). Dual -> main adds PARENT_PROFILE
+     * and starts implicitly: the forwarder is not queryable from inside a managed profile. Fire and
+     * forget: the receiver reports its own failures.
      */
-    private suspend fun deliver(
-        activity: Activity,
-        request: TransferOpenRequest,
-        route: OpenRoute,
-        owner: SpaceRole,
-        ownerId: Int,
-        target: BridgeTarget,
-        failedText: String,
-    ): Delivery {
-        if (route is OpenRoute.CrossProfileStart && startCrossProfile(activity, request, ownerId)) {
-            return Delivery.Delivered
+    private fun forward(activity: Activity, request: TransferOpenRequest, fromParent: Boolean, ownerId: Int): Boolean {
+        val intent = TransferOpenActivity.forwardIntent(request, fromParent)
+        val via = try {
+            if (fromParent) {
+                val forwarder = findForwarder(activity, intent)
+                if (forwarder != null) intent.component = forwarder
+                if (forwarder != null) "explicit" else "implicit"
+            } else {
+                CrossProfile.decorateIntentForActivityInParentProfile(activity, intent)
+                "parent_category"
+            }
+        } catch (e: RuntimeException) {
+            DiagnosticLog.w(TAG, "open.forward failed reason=${failureReason(e)} stage=prepare")
+            return false
         }
-        if (route is OpenRoute.CrossProfileStart) DiagnosticLog.w(TAG, "open.route route=route_fallback")
-
-        val queued = withContext(Dispatchers.IO) {
-            runDestinationBridgeOperation(
-                activity,
-                TAG,
-                "open queue owner=$ownerId",
-                target,
-                command = QueueTransferOpen(request.toDto()),
-            )
-        }
-        if (queued !is ProfileBridgeResult.Value || queued.value != true) {
-            return Delivery.Failed(profileBridgeFailureMessage(activity, queued, failedText))
-        }
-        val launched = if (owner == SpaceRole.Dual) {
-            UserHandles.of(ownerId)?.let { ProfileEntryLauncher.start(activity, it) } ?: false
-        } else {
-            ParentEntryLauncher.start(activity)
-        }
-        return if (launched) Delivery.Delivered else Delivery.Failed(failedText)
-    }
-
-    private fun startCrossProfile(activity: Activity, request: TransferOpenRequest, ownerUserId: Int): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
-        return runCatching {
-            val apps = activity.getSystemService(CrossProfileApps::class.java) ?: return false
-            val owner = UserHandles.of(ownerUserId) ?: return false
-            apps.startActivity(TransferOpenActivity.intent(activity, request), owner, activity)
-            DiagnosticLog.i(TAG, "open.route route=cross_profile_start owner=$ownerUserId")
+        return try {
+            activity.startActivity(intent)
+            DiagnosticLog.i(TAG, "open.forward sent owner=$ownerId mode=${request.mode} via=$via")
             true
-        }.onFailure { DiagnosticLog.w(TAG, "open.cross_profile_start failed cause=${it.javaClass.simpleName}") }
-            .getOrDefault(false)
+        } catch (e: RuntimeException) {
+            DiagnosticLog.w(TAG, "open.forward failed reason=${failureReason(e)} via=$via")
+            false
+        }
     }
 
-    private fun canInteractAcrossProfiles(context: Context): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
-        return runCatching {
-            context.getSystemService(CrossProfileApps::class.java)?.canInteractAcrossProfiles() == true
-        }.getOrDefault(false)
+    private fun findForwarder(context: Context, intent: Intent): ComponentName? = runCatching {
+        context.packageManager.queryIntentActivities(Intent(intent).setComponent(null), MATCH_DISABLED_COMPONENTS or MATCH_DEFAULT_ONLY)
+            .firstOrNull { it.activityInfo.packageName == TransferOpenPlanner.FORWARDER_PACKAGE }
+            ?.activityInfo?.run { ComponentName(packageName, name) }
+    }.getOrNull()
+
+    private fun failureReason(e: RuntimeException) = when (e) {
+        is ActivityNotFoundException -> "not_found"
+        is SecurityException -> "security"
+        else -> "error:${e.javaClass.simpleName}"
+    }
+
+    private fun unrecordedMessage(context: Context, owner: SpaceRole): String {
+        val strings = PrismLocale.wrap(context)
+        return strings.getString(R.string.lz_xfer_open_unrecorded, strings.getString(owner.sentenceNameRes()))
     }
 
     private fun shareFailedMessage(context: Context, owner: SpaceRole): String {
@@ -312,8 +288,7 @@ internal object TransferOpenCoordinator {
 
     private fun OpenRoute.logName() = when (this) {
         OpenRoute.Local -> "local"
-        is OpenRoute.CrossProfileStart -> "cross_profile_start"
-        is OpenRoute.QueuedEntry -> "queued_entry"
-        is OpenRoute.Blocked -> "gate_blocked"
+        is OpenRoute.Forwarded -> "forwarded"
+        is OpenRoute.Blocked -> "blocked"
     }
 }

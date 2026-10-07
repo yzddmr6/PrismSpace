@@ -32,7 +32,12 @@ internal object TransferOpener {
 
     private enum class Presence { Exists, Missing, Unknown }
 
+    /**
+     * Runs in the owner, before the caller forwards: the same ledger rule the receiver applies, so a
+     * request this user would ignore is reported as [BridgeInspectResult.Unrecorded] instead of silence.
+     */
     fun inspect(context: Context, contentUri: String, mime: String?, mode: BridgeOpenMode): BridgeInspectResult {
+        if (!isRecordedHere(contentUri, TransferLedger.load(context))) return BridgeInspectResult.Unrecorded
         val uri = Uri.parse(contentUri)
         if (presence(context, uri) == Presence.Missing) return BridgeInspectResult.Missing
         if (mode == BridgeOpenMode.File && viewerChoice(context, uri, mime) == ViewerChoice.NoViewer) {

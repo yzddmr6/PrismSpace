@@ -54,7 +54,6 @@ internal object BridgeDispatcher {
             is InspectTransferredFile -> fileBridge(command) {
                 inspectTransferredFile(context, command.contentUri, command.mime, command.mode)
             }
-            is QueueTransferOpen -> fileBridge(command) { queueTransferOpen(context, command.request) }
             is QueryProfileAppsPage -> appList(command) {
                 queryProfileApps(context, command.pageIndex, command.pageSize)
             }

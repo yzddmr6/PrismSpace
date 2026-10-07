@@ -10,6 +10,14 @@ object CrossProfile {
 	const val CATEGORY_PARENT_PROFILE = "com.yzddmr6.prismspace.category.PARENT_PROFILE"
 	const val CATEGORY_MANAGED_PROFILE = "com.yzddmr6.prismspace.category.MANAGED_PROFILE"
 
+	/** PrismSpace's own cross-space "open / share a transferred file" request, carried by the system
+	 *  intent forwarder (extras only, no data). Filters are registered by the dual space's profile owner. */
+	const val ACTION_TRANSFER_OPEN = "com.yzddmr6.prismspace.action.TRANSFER_OPEN"
+	/** Receives requests sent from the main space; lives (enabled) only in the dual space. */
+	const val TRANSFER_OPEN_FROM_MAIN = "com.yzddmr6.prismspace.prism.transfer.TransferOpenFromMain"
+	/** Receives requests sent from the dual space; enabled in the main space, disabled in the dual space. */
+	const val TRANSFER_OPEN_FROM_DUAL = "com.yzddmr6.prismspace.prism.transfer.TransferOpenFromDual"
+
 	/** Ensure a cross-profile intent forwarder is registered for this action+CATEGORY_PARENT_PROFILE, then add
 	 *  the category to [intent] so the system routes it via the forwarder when startActivity is called.
 	 *  The target activity in parent profile must declare [CATEGORY_PARENT_PROFILE] in its intent-filter.

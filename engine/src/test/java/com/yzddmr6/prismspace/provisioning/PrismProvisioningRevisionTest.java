@@ -21,16 +21,30 @@ public class PrismProvisioningRevisionTest {
         assertTrue(PrismProvisioning.shouldRunOneTimePostProvisionMigration(9, 10));
     }
 
-    @Test public void revisionIsBumpedForSystemAppPolicy() throws Exception {
+    @Test public void revisionIsBumpedForTransferForwarding() throws Exception {
         final java.lang.reflect.Field field = PrismProvisioning.class.getDeclaredField("POST_PROVISION_REV");
         field.setAccessible(true);
-        assertEquals(12, field.getInt(null));
+        assertEquals(13, field.getInt(null));
     }
 
-    @Test public void previousRevisionRunsSystemAppPolicyMigration() {
-        assertTrue(PrismProvisioning.shouldRunOneTimePostProvisionMigration(10, 12));
-        assertTrue(PrismProvisioning.shouldRunOneTimePostProvisionMigration(11, 12));
-        assertFalse(PrismProvisioning.shouldRunOneTimePostProvisionMigration(12, 12));
+    @Test public void previousRevisionsRunTransferForwardingMigration() {
+        assertTrue(PrismProvisioning.shouldRunOneTimePostProvisionMigration(10, 13));
+        assertTrue(PrismProvisioning.shouldRunOneTimePostProvisionMigration(11, 13));
+        assertTrue(PrismProvisioning.shouldRunOneTimePostProvisionMigration(12, 13));
+        assertFalse(PrismProvisioning.shouldRunOneTimePostProvisionMigration(13, 13));
+    }
+
+    @Test public void migrationLogsItsResultAfterCommit() throws Exception {
+        final String source = new String(java.nio.file.Files.readAllBytes(
+                java.nio.file.Paths.get("src/main/java/com/yzddmr6/prismspace/provisioning/PrismProvisioning.java")),
+                java.nio.charset.StandardCharsets.UTF_8);
+        final String migration = source.substring(source.indexOf("void performIncrementalProfileOwnerProvisioningIfNeeded"));
+        final int start = migration.indexOf("Running post-provision migration");
+        final int commit = migration.indexOf(".commit()");
+        final int done = migration.indexOf("post_provision_migration done from=");
+        assertTrue(start >= 0);
+        assertTrue(commit > start);
+        assertTrue(done > commit);
     }
 
     @Test public void migrationClearsOwnedCrossProfileFiltersBeforeReinstalling() throws Exception {
@@ -49,6 +63,7 @@ public class PrismProvisioningRevisionTest {
         assertFalse(PrismProvisioning.shouldConvergeIncrementally(2));
         assertTrue(PrismProvisioning.shouldConvergeIncrementally(3));
         assertTrue(PrismProvisioning.shouldConvergeIncrementally(12));
+        assertTrue(PrismProvisioning.shouldConvergeIncrementally(13));
     }
 
     @Test public void currentOrFutureStateSkipsMigration() {

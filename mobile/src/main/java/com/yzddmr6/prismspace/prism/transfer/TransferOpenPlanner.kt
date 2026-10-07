@@ -2,8 +2,6 @@ package com.yzddmr6.prismspace.prism.transfer
 
 import com.yzddmr6.prismspace.bridge.BridgeInspectResult
 import com.yzddmr6.prismspace.bridge.BridgeOpenMode
-import com.yzddmr6.prismspace.bridge.TransferOpenRequestDto
-import com.yzddmr6.prismspace.bridge.TransferShareItemDto
 import com.yzddmr6.prismspace.prism.compose.vm.SpaceActionGate
 
 internal enum class OpenMode { Folder, File, Share }
@@ -60,10 +58,10 @@ internal sealed interface ShareFilter {
     data object BridgeFailed : ShareFilter
 }
 
+/** One delivery route: here, through the system cross-profile intent forwarder, or not at all. */
 internal sealed interface OpenRoute {
     data object Local : OpenRoute
-    data class CrossProfileStart(val ownerUserId: Int) : OpenRoute
-    data class QueuedEntry(val ownerUserId: Int) : OpenRoute
+    data class Forwarded(val ownerUserId: Int) : OpenRoute
     data class Blocked(val guidance: String) : OpenRoute
 }
 
@@ -106,21 +104,14 @@ internal object TransferOpenPlanner {
 
     /**
      * Received rows are opened here. Sent rows live in the paired space: the dual-space owner is
-     * gated first (only computable in the main space); then a platform cross-profile start when
-     * allowed (API 30+ and granted), otherwise a queued request plus launching the owner's entry.
+     * gated first (only computable in the main space), then the request is forwarded by the system
+     * cross-profile intent forwarder to PrismSpace in the owner (the profile owner's native route).
      */
-    fun planOpenRoute(
-        role: TransferRole,
-        ownerUserId: Int?,
-        sdkInt: Int,
-        canInteractAcrossProfiles: Boolean,
-        ownerGate: SpaceActionGate?,
-    ): OpenRoute {
+    fun planOpenRoute(role: TransferRole, ownerUserId: Int?, ownerGate: SpaceActionGate?): OpenRoute {
         if (role == TransferRole.Received) return OpenRoute.Local
         if (ownerGate != null && !ownerGate.enabled) return OpenRoute.Blocked(ownerGate.guidance.orEmpty())
         val owner = ownerUserId ?: return OpenRoute.Blocked(ownerGate?.guidance.orEmpty())
-        return if (sdkInt >= 30 && canInteractAcrossProfiles) OpenRoute.CrossProfileStart(owner)
-        else OpenRoute.QueuedEntry(owner)
+        return OpenRoute.Forwarded(owner)
     }
 
     const val ACTION_SEND = "android.intent.action.SEND"
@@ -131,15 +122,9 @@ internal object TransferOpenPlanner {
      * proxy ran the receiver in the target user) the sheet opens here; otherwise exactly the route of
      * opening a Sent row.
      */
-    fun planShareRoute(
-        ownerUserId: Int?,
-        currentUserId: Int,
-        sdkInt: Int,
-        canInteractAcrossProfiles: Boolean,
-        ownerGate: SpaceActionGate?,
-    ): OpenRoute =
+    fun planShareRoute(ownerUserId: Int?, currentUserId: Int, ownerGate: SpaceActionGate?): OpenRoute =
         if (ownerUserId != null && ownerUserId == currentUserId) OpenRoute.Local
-        else planOpenRoute(TransferRole.Sent, ownerUserId, sdkInt, canInteractAcrossProfiles, ownerGate)
+        else planOpenRoute(TransferRole.Sent, ownerUserId, ownerGate)
 
     // All equal: that type. Same top-level type: the "image/ *" style wildcard (without the space).
     // Otherwise, or nothing known: the any-type wildcard. Comparison is case-insensitive.
@@ -178,7 +163,7 @@ internal object TransferOpenPlanner {
     }
 
     /**
-     * Parallel uri / mime lists as carried by intent extras and the pending slot ("" = unknown mime)
+     * Parallel uri / mime lists as carried by the forwarded intent's extras ("" = unknown mime)
      * back to items; null when empty, containing a blank uri, or of unequal length.
      */
     fun shareItemsOf(uris: List<String>?, mimes: List<String>?): List<ShareItem>? {
@@ -187,10 +172,15 @@ internal object TransferOpenPlanner {
         return uris.mapIndexed { index, uri -> ShareItem(uri, mimes[index].ifEmpty { null }) }
     }
 
-    /** Missing → dropped; Exists / NoViewer → kept; any null (a bridge failure) → [ShareFilter.BridgeFailed]. */
+    /**
+     * Missing / Unrecorded → dropped (the owner would not share it); Exists / NoViewer → kept; any null
+     * (a bridge failure) → [ShareFilter.BridgeFailed].
+     */
     fun keepPresent(items: List<ShareItem>, results: List<BridgeInspectResult?>): ShareFilter {
         if (results.size != items.size || results.any { it == null }) return ShareFilter.BridgeFailed
-        val kept = items.filterIndexed { index, _ -> results[index] != BridgeInspectResult.Missing }
+        val kept = items.filterIndexed { index, _ ->
+            results[index] != BridgeInspectResult.Missing && results[index] != BridgeInspectResult.Unrecorded
+        }
         return ShareFilter.Kept(kept, items.size - kept.size)
     }
 }
@@ -200,27 +190,3 @@ internal fun OpenMode.toBridge(): BridgeOpenMode = when (this) {
     OpenMode.File -> BridgeOpenMode.File
     OpenMode.Share -> BridgeOpenMode.Share
 }
-
-internal fun BridgeOpenMode.toOpenMode(): OpenMode = when (this) {
-    BridgeOpenMode.Folder -> OpenMode.Folder
-    BridgeOpenMode.File -> OpenMode.File
-    BridgeOpenMode.Share -> OpenMode.Share
-}
-
-internal fun TransferOpenRequest.toDto() = TransferOpenRequestDto(
-    recordId,
-    mode.toBridge(),
-    contentUri,
-    mime,
-    relativePath,
-    shareItems.map { TransferShareItemDto(it.contentUri, it.mime) },
-)
-
-internal fun TransferOpenRequestDto.toOpenRequest() = TransferOpenRequest(
-    recordId,
-    mode.toOpenMode(),
-    contentUri,
-    mime,
-    relativePath,
-    shareItems.map { ShareItem(it.contentUri, it.mime) },
-)

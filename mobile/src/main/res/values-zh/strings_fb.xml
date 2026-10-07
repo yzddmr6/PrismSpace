@@ -12,7 +12,6 @@
     <string name="fb_open_files_failed">无法打开双开空间文件管理（系统转发不可用）</string>
     <string name="fb_opened_downloads">已打开双开空间下载目录</string>
     <string name="fb_opened_profile_entry">已打开 PrismSpace 双开空间</string>
-    <string name="fb_opened_cross_profile_permission">已打开 Android 跨资料访问授权页，请授权后重试。</string>
     <string name="fb_opened_profile_entry_retry">已打开 PrismSpace 双开空间，请在完成重连后返回 PrismSpace 重试。</string>
     <string name="fb_open_downloads_failed">无法打开双开空间下载目录</string>
 </resources>

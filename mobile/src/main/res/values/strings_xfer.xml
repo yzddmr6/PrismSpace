@@ -64,4 +64,5 @@
     <string name="lz_xfer_share_gate_missing">Set up the dual space before sharing from it</string>
     <string name="lz_xfer_share_gate_unknown">Repair the dual space in Settings before sharing from it</string>
     <string name="lz_xfer_clone_notice">This phone has system-level dual apps. If the share sheet freezes after you pick a main-space app, use PrismSpace\'s \"Send to other space\" and then \"Continue sharing in the other space\".</string>
+    <string name="lz_xfer_open_unrecorded">This record was removed in the %1$s, so it can\'t be opened there</string>
 </resources>
