@@ -9,7 +9,7 @@ import java.util.Locale
 
 internal enum class RowIcon { Image, File, ApkSuite }
 
-internal enum class RowActionKind { OpenFolder, OpenFile, ContinueInstall, Install }
+internal enum class RowActionKind { OpenFolder, OpenFile, ContinueInstall, Install, ShareInOtherSpace }
 
 internal data class RowAction(
     val kind: RowActionKind,
@@ -26,6 +26,8 @@ internal data class TransferRowModel(
     val primary: RowAction?,
     val secondary: RowAction?,
     val canRemove: Boolean,
+    /** "Continue sharing in the other space": Sent file rows only (the file lives in the paired space). */
+    val share: RowAction? = null,
 )
 
 /** "MM-dd HH:mm"; blank when the time is unknown. The one formatter for every transfer list. */
@@ -82,6 +84,16 @@ internal fun transferRowModel(
         )
         TransferKind.ApkSuite -> null
     }
+    val share = if (record.role == TransferRole.Sent && record.kind == TransferKind.File) {
+        RowAction(
+            RowActionKind.ShareInOtherSpace,
+            res(R.string.lz_xfer_share_continue, emptyArray()),
+            enabled = record.contentUri != null,
+            disabledReason = res(R.string.lz_xfer_open_uri_unknown, emptyArray()).takeIf { record.contentUri == null },
+        )
+    } else {
+        null
+    }
     return TransferRowModel(
         id = record.id,
         title = record.displayTitle(),
@@ -94,6 +106,7 @@ internal fun transferRowModel(
         primary = primary,
         secondary = secondary,
         canRemove = true,
+        share = share,
     )
 }
 

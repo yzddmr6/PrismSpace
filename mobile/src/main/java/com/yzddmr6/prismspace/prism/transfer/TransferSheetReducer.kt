@@ -46,6 +46,10 @@ internal sealed interface TransferSheetState {
         val total: Int,
         val cancelled: Boolean,
         val rows: List<ItemResult>,
+        /** The user holding the published files (the target space); null when unknown. */
+        val targetUserId: Int? = null,
+        /** Published URIs of the items that were actually sent, in request order. Empty → no share action. */
+        val shareItems: List<ShareItem> = emptyList(),
     ) : TransferSheetState {
         val headline: ResultHeadline
             get() = when {
@@ -132,12 +136,22 @@ internal object TransferSheetReducer {
         } + request.skipped.map { ref ->
             ItemResult(skippedName(ref), ItemStatus.Failed, FileTransferFailureReason.SourceUnreadable, source)
         }
+        // Only files that really landed can be shared on; cancelled, failed and skipped items never can.
+        val shareItems = if (request.kind == TransferKind.File) {
+            request.items.mapNotNull { item ->
+                (byId[item.transferId] as? TransferOutcome.Sent)?.let { ShareItem(it.publishedUri, item.source.mime) }
+            }
+        } else {
+            emptyList()
+        }
         return TransferSheetState.Result(
             target = target,
             sent = rows.count { it.status == ItemStatus.Sent },
             total = rows.size,
             cancelled = rows.any { it.status == ItemStatus.Cancelled },
             rows = rows,
+            targetUserId = request.destination.targetUserId,
+            shareItems = shareItems,
         )
     }
 

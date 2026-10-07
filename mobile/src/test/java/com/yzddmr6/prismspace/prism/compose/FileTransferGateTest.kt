@@ -68,4 +68,28 @@ class FileTransferGateTest {
             fileTransferGate(SpaceUsability.BridgeNotReady, testZhResolver).guidance,
         )
     }
+
+    @Test fun shareGateHasItsOwnCopyForEveryState() {
+        val states = listOf(
+            SpaceUsability.Suspended,
+            SpaceUsability.LockedNeedsUnlock,
+            SpaceUsability.BridgeNotReady,
+            SpaceUsability.NotProvisioned,
+            SpaceUsability.Unknown,
+        )
+        val shareCopy = states.map { state ->
+            val share = fileTransferGate(state, testZhResolver, GateAction.Share)
+            assertFalse("$state must block sharing", share.enabled)
+            assertNotEquals("$state share copy must differ from send copy", fileTransferGate(state, testZhResolver, GateAction.Send).guidance, share.guidance)
+            assertNotEquals("$state share copy must differ from open copy", fileTransferGate(state, testZhResolver, GateAction.Open).guidance, share.guidance)
+            assertTrue("$state share copy names the share action", share.guidance!!.contains("继续分享"))
+            share.guidance
+        }
+        assertEquals("share copy must be state specific", states.size, shareCopy.toSet().size)
+        assertTrue(fileTransferGate(SpaceUsability.Usable, testZhResolver, GateAction.Share).enabled)
+        assertEquals(
+            "请先在设置中恢复双开空间，然后再继续分享",
+            fileTransferGate(SpaceUsability.Suspended, testZhResolver, GateAction.Share).guidance,
+        )
+    }
 }

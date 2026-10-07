@@ -144,4 +144,65 @@ class TransferSheetReducerTest {
             assertEquals(TransferSheetState.Rejected(reason), reduce(SheetEvent.Started, SheetEvent.Planned(BatchPlan.Rejected(reason), external = true)))
         }
     }
+
+    // ── Continue sharing in the other space ──
+
+    private fun sent(id: String) = TransferOutcome.Sent(id, "content://media/external/file/$id", 100L)
+
+    @Test fun allSentBatchSharesEveryPublishedUriInRequestOrder() {
+        val req = request(3)
+        val result = TransferSheetReducer.finished(req, listOf(sent("i3"), sent("i1"), sent("i2")))
+
+        assertEquals(
+            listOf("i1", "i2", "i3").map { ShareItem("content://media/external/file/$it", "application/pdf") },
+            result.shareItems,
+        )
+    }
+
+    @Test fun cancelledRestSharesOnlyTheSentItems() {
+        val result = TransferSheetReducer.finished(
+            request(5),
+            listOf(
+                sent("i1"),
+                sent("i2"),
+                sent("i3"),
+                TransferOutcome.Cancelled("i4", started = true),
+                TransferOutcome.Cancelled("i5", started = false),
+            ),
+        )
+
+        assertEquals(ResultHeadline.CancelledRest, result.headline)
+        assertEquals(3, result.shareItems.size)
+        assertEquals(listOf("i1", "i2", "i3").map { "content://media/external/file/$it" }, result.shareItems.map { it.contentUri })
+    }
+
+    @Test fun failedAndSkippedItemsAreNeverShared() {
+        val result = TransferSheetReducer.finished(
+            request(2, skipped = 1),
+            listOf(sent("i1"), TransferOutcome.Failed("i2", FileTransferFailureReason.TargetWriteFailed, SpaceRole.Dual)),
+        )
+
+        assertEquals(listOf(ShareItem("content://media/external/file/i1", "application/pdf")), result.shareItems)
+    }
+
+    @Test fun noneSentHasNoShareAction() {
+        val result = TransferSheetReducer.finished(
+            request(2),
+            listOf(TransferOutcome.Cancelled("i1", true), TransferOutcome.Cancelled("i2", false)),
+        )
+
+        assertEquals(ResultHeadline.NoneSent, result.headline)
+        assertTrue(result.shareItems.isEmpty())
+    }
+
+    @Test fun targetUserIdIsPassedThrough() {
+        assertEquals(23, TransferSheetReducer.finished(request(1), listOf(sent("i1"))).targetUserId)
+    }
+
+    @Test fun apkSuitesAreNeverShared() {
+        val result = TransferSheetReducer.finished(request(1).copy(kind = TransferKind.ApkSuite), listOf(sent("i1")))
+
+        assertEquals(1, result.sent)
+        assertTrue(result.shareItems.isEmpty())
+    }
 }

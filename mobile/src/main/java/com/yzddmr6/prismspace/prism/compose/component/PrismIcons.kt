@@ -30,6 +30,7 @@ import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Sort
 import androidx.compose.material.icons.outlined.Storefront
@@ -64,6 +65,7 @@ object PrismIcons {
     val Power: ImageVector get() = Icons.Outlined.PowerSettingsNew
     val Download: ImageVector get() = Icons.Outlined.FileDownload
     val Refresh: ImageVector get() = Icons.Outlined.Refresh
+    val Share: ImageVector get() = Icons.Outlined.Share
     val Box: ImageVector get() = Icons.Outlined.Inventory2
     val Store: ImageVector get() = Icons.Outlined.Storefront
     val Adb: ImageVector get() = Icons.Outlined.Adb

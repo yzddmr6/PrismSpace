@@ -35,12 +35,14 @@ import androidx.compose.ui.unit.dp
 import com.yzddmr6.prismspace.mobile.R
 import com.yzddmr6.prismspace.prism.compose.theme.PrismMinTouchTarget
 import com.yzddmr6.prismspace.prism.compose.theme.PrismSpacing
+import com.yzddmr6.prismspace.prism.compose.vm.StringResolver
 import com.yzddmr6.prismspace.prism.compose.vm.prismResolver
 import com.yzddmr6.prismspace.prism.transfer.OpenMode
 import com.yzddmr6.prismspace.prism.transfer.OpenOutcome
 import com.yzddmr6.prismspace.prism.transfer.RowAction
 import com.yzddmr6.prismspace.prism.transfer.RowActionKind
 import com.yzddmr6.prismspace.prism.transfer.RowIcon
+import com.yzddmr6.prismspace.prism.transfer.ShareOutcome
 import com.yzddmr6.prismspace.prism.transfer.TransferLedgerRecord
 import com.yzddmr6.prismspace.prism.transfer.TransferOpenCoordinator
 import com.yzddmr6.prismspace.prism.transfer.TransferRowModel
@@ -98,6 +100,23 @@ internal fun TransferHistoryList(
         }
     }
 
+    fun share(record: TransferLedgerRecord) {
+        val host = activity ?: return
+        if (opening) return
+        opening = true
+        scope.launch {
+            val outcome = try {
+                TransferOpenCoordinator.shareRecord(host, record)
+            } finally {
+                opening = false
+            }
+            when (outcome) {
+                ShareOutcome.Missing -> missingRecord = record
+                else -> shareOutcomeMessage(outcome, res)?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+            }
+        }
+    }
+
     fun perform(record: TransferLedgerRecord, action: RowAction) {
         if (!action.enabled) {
             action.disabledReason?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
@@ -107,6 +126,7 @@ internal fun TransferHistoryList(
             RowActionKind.OpenFolder -> open(record, OpenMode.Folder)
             RowActionKind.OpenFile -> open(record, OpenMode.File)
             RowActionKind.ContinueInstall, RowActionKind.Install -> onApkAction(record)
+            RowActionKind.ShareInOtherSpace -> share(record)
         }
     }
 
@@ -215,6 +235,25 @@ internal fun TransferHistoryList(
     }
 }
 
+/**
+ * Toast text for a "continue sharing" outcome, shared by the transfer sheet and the ledger rows;
+ * null when nothing needs saying (the share sheet opened with every file).
+ */
+internal fun shareOutcomeMessage(outcome: ShareOutcome, res: StringResolver): String? = when (outcome) {
+    is ShareOutcome.Opened -> skippedMessage(outcome.dropped, res)
+    is ShareOutcome.Handoff -> listOfNotNull(
+        res(R.string.lz_xfer_share_handoff, arrayOf(res(outcome.owner.sentenceNameRes(), emptyArray()))),
+        skippedMessage(outcome.dropped, res),
+    ).joinToString("\n")
+    ShareOutcome.Missing -> res(R.string.lz_xfer_share_missing, emptyArray())
+    ShareOutcome.NoTarget -> res(R.string.lz_xfer_share_no_target, emptyArray())
+    is ShareOutcome.Blocked -> outcome.guidance
+    is ShareOutcome.Failed -> outcome.message
+}
+
+private fun skippedMessage(dropped: Int, res: StringResolver): String? =
+    if (dropped > 0) res(R.string.lz_xfer_share_skipped, arrayOf(dropped)) else null
+
 private fun RowIcon.vector(): ImageVector = when (this) {
     RowIcon.Image -> PrismIcons.Img
     RowIcon.File -> PrismIcons.File
@@ -250,6 +289,9 @@ private fun RecordActionSheet(
             }
             model.secondary?.let { action ->
                 RecordSheetAction(PrismIcons.FileOpen, action.label, action.disabledReason, action.enabled) { onAction(action) }
+            }
+            model.share?.let { action ->
+                RecordSheetAction(PrismIcons.Share, action.label, action.disabledReason, action.enabled) { onAction(action) }
             }
             if (model.canRemove) {
                 RecordSheetAction(PrismIcons.Trash, stringResource(R.string.lz_xfer_remove_record), null, true, onRemove)

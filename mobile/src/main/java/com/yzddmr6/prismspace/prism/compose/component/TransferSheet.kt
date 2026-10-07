@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.text.format.Formatter
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -34,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,14 +51,20 @@ import com.yzddmr6.prismspace.mobile.R
 import com.yzddmr6.prismspace.prism.compose.theme.PrismMinTouchTarget
 import com.yzddmr6.prismspace.prism.compose.theme.PrismSpacing
 import com.yzddmr6.prismspace.prism.compose.vm.TransferSheetViewModel
+import com.yzddmr6.prismspace.prism.compose.vm.prismResolver
 import com.yzddmr6.prismspace.prism.service.FileTransferFailureReason
 import com.yzddmr6.prismspace.prism.transfer.BatchRejection
 import com.yzddmr6.prismspace.prism.transfer.ItemResult
 import com.yzddmr6.prismspace.prism.transfer.ItemStatus
 import com.yzddmr6.prismspace.prism.transfer.ResultHeadline
+import com.yzddmr6.prismspace.prism.transfer.ShareOrigin
+import com.yzddmr6.prismspace.prism.transfer.ShareOutcome
 import com.yzddmr6.prismspace.prism.transfer.SpaceRole
+import com.yzddmr6.prismspace.prism.transfer.TransferOpenCoordinator
 import com.yzddmr6.prismspace.prism.transfer.TransferSheetState
 import com.yzddmr6.prismspace.prism.transfer.sentenceNameRes
+import java.util.UUID
+import kotlinx.coroutines.launch
 
 /**
  * The one transfer sheet, hosted by the share receiver, the Files page and the dual-space entry.
@@ -88,6 +96,33 @@ fun TransferSheetHost(
         if (state == null && wasOpen) onClosed()
         wasOpen = state != null
     }
+    // "Continue sharing in the other space": runs here (not in the VM) so no ViewModel holds an Activity.
+    val scope = rememberCoroutineScope()
+    val res = remember(context) { prismResolver(context) }
+    var sharing by remember { mutableStateOf(false) }
+    fun shareOnward(result: TransferSheetState.Result) {
+        val host = context.findActivity() ?: return
+        if (sharing) return
+        sharing = true
+        scope.launch {
+            val outcome = try {
+                TransferOpenCoordinator.share(
+                    host,
+                    ShareOrigin.Result,
+                    result.target,
+                    result.targetUserId,
+                    result.shareItems,
+                    handoffId = UUID.randomUUID().toString(),
+                )
+            } finally {
+                sharing = false
+            }
+            shareOutcomeMessage(outcome, res)?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+            // Opened / handed off: the share continues in the other surface, the sheet is done.
+            // Anything else keeps the sheet so the user can resume the space and tap again.
+            if (outcome is ShareOutcome.Opened || outcome is ShareOutcome.Handoff) vm.close()
+        }
+    }
     val current = state ?: return
     // A new sheet per phase: a sheet swiped away during Progress cancels, and the Result reappears.
     key(current.phase()) {
@@ -114,7 +149,13 @@ fun TransferSheetHost(
                     TransferSheetState.Resolving -> ResolvingContent()
                     is TransferSheetState.Confirm -> ConfirmContent(current, onSend = vm::send, onCancel = vm::cancel)
                     is TransferSheetState.Progress -> ProgressContent(current, onCancel = vm::cancel)
-                    is TransferSheetState.Result -> ResultContent(current, resultActions, onDone = vm::close)
+                    is TransferSheetState.Result -> ResultContent(
+                        current,
+                        resultActions,
+                        sharing = sharing,
+                        onShare = { shareOnward(current) },
+                        onDone = vm::close,
+                    )
                     is TransferSheetState.Rejected -> RejectedContent(current.reason, onDone = vm::close)
                 }
             }
@@ -233,6 +274,8 @@ private fun ProgressContent(state: TransferSheetState.Progress, onCancel: () -> 
 private fun ColumnScope.ResultContent(
     state: TransferSheetState.Result,
     resultActions: @Composable ColumnScope.() -> Unit,
+    sharing: Boolean,
+    onShare: () -> Unit,
     onDone: () -> Unit,
 ) {
     SheetTitle(
@@ -267,6 +310,16 @@ private fun ColumnScope.ResultContent(
                     )
                 }
             }
+        }
+    }
+    // Same action from every host (share receiver, Files page, dual-space entry), so it lives here.
+    if (state.shareItems.isNotEmpty()) {
+        OutlinedButton(
+            onClick = onShare,
+            enabled = !sharing,
+            modifier = Modifier.fillMaxWidth().heightIn(min = PrismMinTouchTarget),
+        ) {
+            Text(stringResource(R.string.lz_xfer_share_continue))
         }
     }
     resultActions()

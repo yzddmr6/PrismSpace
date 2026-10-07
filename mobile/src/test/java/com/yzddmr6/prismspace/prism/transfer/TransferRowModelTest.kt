@@ -85,4 +85,34 @@ class TransferRowModelTest {
         assertEquals("", formatTransferTime(0L))
         assertEquals("", formatTransferTime(-1L))
     }
+
+    // ── Continue sharing in the other space ──
+
+    @Test fun sentFileRowsOfferSharingInTheOtherSpace() {
+        val model = transferRowModel(record(TransferRole.Sent, TransferDirection.ToProfile), testZhResolver, true, time)
+
+        assertEquals(RowActionKind.ShareInOtherSpace, model.share?.kind)
+        assertEquals("在另一空间继续分享", model.share?.label)
+        assertTrue(model.share!!.enabled)
+        assertNull(model.share!!.disabledReason)
+    }
+
+    @Test fun receivedAndApkSuiteRowsHaveNoShareAction() {
+        assertNull(transferRowModel(record(TransferRole.Received, TransferDirection.ToProfile), testZhResolver, false, time).share)
+        assertNull(
+            transferRowModel(
+                record(TransferRole.Sent, TransferDirection.ToProfile, kind = TransferKind.ApkSuite),
+                testZhResolver,
+                true,
+                time,
+            ).share,
+        )
+    }
+
+    @Test fun legacySentRowsDisableSharingWithTheUnknownLocationReason() {
+        val model = transferRowModel(record(TransferRole.Sent, null, uri = null, legacy = true), testZhResolver, true, time)
+
+        assertFalse(model.share!!.enabled)
+        assertEquals(testZhResolver(com.yzddmr6.prismspace.mobile.R.string.lz_xfer_open_uri_unknown, emptyArray()), model.share!!.disabledReason)
+    }
 }
