@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Process
 import android.util.Log
 import androidx.core.content.FileProvider
+import com.yzddmr6.prismspace.PrismApplication
 import com.yzddmr6.prismspace.util.Users
 import java.io.File
 import java.io.RandomAccessFile
@@ -100,11 +101,27 @@ object DiagnosticLog {
     }
     private val snapshotLeases = DiagnosticSnapshotLeaseRegistry(MAX_SNAPSHOT_FILES, SNAPSHOT_TTL_MS)
 
-    @Volatile private var appContext: Context? = null
+    /** Lines written before any context is obtainable (inside the Application constructor). */
+    private const val EARLY_CAPACITY = 64
 
+    private val gate = EarlyLogGate(EARLY_CAPACITY) { context, line -> append(context, line) }
+
+    /**
+     * Where a not-yet-initialised log gets its context on first write: the Application once attached,
+     * which precedes every ContentProvider.onCreate (the incremental profile convergence runs from one).
+     */
+    internal var contextSource: () -> Context? = { PrismApplication.attachedOrNull() }
+
+    /** Idempotent; the log may already have initialised itself lazily on an earlier write. */
     fun init(context: Context) {
-        appContext = context.applicationContext
-        record("I", "Prism.Diag", "initialized package=${context.packageName} user=${currentUserId()}")
+        val attached = gate.attach(context.applicationContext ?: context) ?: return
+        recordInitialized("explicit", attached)
+    }
+
+    private fun recordInitialized(source: String, attached: EarlyLogGate.Attached) {
+        val context = gate.context ?: return
+        record("I", "Prism.Diag", "initialized package=${context.packageName} user=${currentUserId()} " +
+            "source=$source buffered=${attached.buffered} dropped=${attached.dropped}")
     }
 
     fun v(tag: String, message: String) { Log.v(tag, message); record("V", tag, message) }
@@ -120,7 +137,6 @@ object DiagnosticLog {
     }
 
     fun record(level: String, tag: String, message: String, t: Throwable? = null) {
-        val context = appContext ?: return
         val line = buildString {
             append(timestamp())
             append(' ')
@@ -139,6 +155,11 @@ object DiagnosticLog {
             }
             append('\n')
         }
+        gate.offer(line) { contextSource() }?.let { recordInitialized("lazy", it) }
+    }
+
+    /** Ordered by the single-thread executor; the 2 MiB rolling budget is enforced on every append. */
+    private fun append(context: Context, line: String) {
         executor.execute {
             runCatching {
                 val file = rollingFile(context)

@@ -22,6 +22,10 @@ class PrismApplication : Application() {
 
 		lateinit var sInstance: PrismApplication
 
+		/** The Application once attached (before any ContentProvider.onCreate); null inside its constructor. */
+		@JvmStatic fun attachedOrNull(): android.content.Context? =
+			if (this::sInstance.isInitialized) sInstance.takeIf { it.baseContext != null } else null
+
 		private const val PREFS_OWNER_HOUSEKEEPING = "prism_owner_housekeeping"
 		private const val KEY_CONVERGE_TRAMPOLINE_RETIRED = "converge_trampoline_retired"
 		private const val CONVERGE_ACTIVITY_CLASS =
