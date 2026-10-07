@@ -1,20 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="lz_pf_files_send_other">傳送到雙開空間</string>
-    <string name="lz_pf_files_send_other_summary">從主空間選擇檔案，複製到雙開空間的下載目錄。</string>
-    <string name="lz_pf_direction_to_main">傳到主空間</string>
-    <string name="lz_pf_direction_to_profile">傳到雙開空間</string>
-    <string name="lz_pf_entry_export_summary">點「分享」→ 選「匯入到此空間 PrismSpace」→ 在 PrismSpace 內選「傳送到另一空間」</string>
-    <string name="lz_pf_files_step2">在分享面板選擇「匯入到此空間 PrismSpace」；找不到時再切換「個人 / 工作」標籤。</string>
-    <string name="lz_pf_files_step3">在 PrismSpace 內選擇「傳送到另一空間」，傳回主空間並等待明確結果。</string>
-    <string name="lz_pf_files_step4">等待明確的成功或分類失敗結果。</string>
-    <string name="lz_pf_files_tab_hint">最終儲存空間以 PrismSpace 內的選擇為準。部分系統開啟接收入口時不會保留分享面板的「個人 / 工作」標籤。</string>
+    <string name="lz_pf_files_send_other_summary">選擇檔案複製到雙開空間：圖片放入 Pictures/PrismSpace，其他檔案放入 Download/PrismSpace。</string>
+    <string name="lz_pf_files_step2">或在任意應用程式中點「分享」→「傳到另一空間」。</string>
+    <string name="lz_pf_files_step3">確認後等待結果，檔案會出現在主空間的 Download/PrismSpace（圖片在 Pictures/PrismSpace）。</string>
+    <string name="lz_pf_files_tab_hint">PrismSpace 依檔案來源自動決定目標：一律傳到另一個空間，與分享面板顯示「個人」還是「工作」標籤無關。</string>
     <string name="lz_pf_files_return_title">如何從雙開空間傳回檔案</string>
-    <string name="lz_pf_open_folder">開啟資料夾</string>
     <string name="lz_pf_choose_files">選擇檔案</string>
     <string name="lz_pf_entry_pending_installs">待安裝</string>
     <string name="lz_pf_entry_pending_ready">安裝包已就緒 · 由 Android 詢問你</string>
-    <string name="lz_pf_entry_send_to_main">傳送檔案到主空間</string>
     <string name="lz_files_gate_suspended">請先在設定中恢復雙開空間，然後再傳送檔案</string>
     <string name="lz_files_gate_locked">請先解鎖雙開空間（螢幕鎖定密碼），然後再傳送檔案</string>
     <string name="lz_files_gate_bridge">請先在設定中修復雙開空間連線，然後再傳送檔案</string>

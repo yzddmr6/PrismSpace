@@ -15,10 +15,6 @@
     <string name="lz_vm_default_space_name">双开空间</string>
 
     <!-- ActionFeedback: files import -->
-    <string name="lz_vm_files_imported">已导入 %1$d 个文件</string>
-    <string name="lz_vm_files_import_all_failed">导入失败：%1$d 个文件未能导入</string>
-    <string name="lz_vm_files_import_partial">导入完成：成功 %1$d，失败 %2$d</string>
-    <string name="lz_vm_files_import_detailed">导入完成：成功 %1$d，超限跳过 %2$d，失败 %3$d</string>
 
     <!-- ActionFeedback: batch actions -->
     <string name="lz_vm_batch_freeze_ok">已冻结 %1$d 个应用</string>

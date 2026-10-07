@@ -26,7 +26,7 @@ class FileTransferResourceContractTest {
     }
 
     @Test
-    fun `share guidance makes the in-app choice authoritative`() {
+    fun `share guidance says the source decides the target`() {
         val root = findProjectRoot()
         listOf(
             "mobile/src/main/res/values/strings_pf.xml",
@@ -37,8 +37,15 @@ class FileTransferResourceContractTest {
             val targetHint = readString(path, "lz_pf_files_tab_hint")
             val targetStep = readString(path, "lz_pf_files_step3")
             assertTrue("target hint should name PrismSpace as the authority in $relativePath", targetHint.contains("PrismSpace"))
-            assertTrue("target step should expose the other-space choice in $relativePath", targetStep.contains("另一") || targetStep.contains("other space"))
+            assertTrue(
+                "target hint should say the destination follows the file source in $relativePath",
+                targetHint.contains("other space") || targetHint.contains("另一个空间") || targetHint.contains("另一個空間"),
+            )
+            assertTrue("result step should name both landing folders in $relativePath", targetStep.contains("Download/PrismSpace") && targetStep.contains("Pictures/PrismSpace"))
             assertFalse("share tabs must not be described as a target-space equality in $relativePath", targetHint.contains("tab =") || targetHint.contains("标签 =") || targetHint.contains("標籤 ="))
+            listOf("另存", "Save as", "本空间", "本空間", "Import into this space", "导入到此空间", "匯入到此空間").forEach { retired ->
+                assertFalse("retired choice \"$retired\" in $relativePath", targetHint.contains(retired) || targetStep.contains(retired))
+            }
         }
     }
 

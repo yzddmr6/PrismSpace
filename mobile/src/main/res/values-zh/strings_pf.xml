@@ -4,38 +4,28 @@
     <string name="lz_pf_entry_hero_title_warn">PrismSpace 未就绪</string>
     <string name="lz_pf_entry_hero_body_warn">本工作资料未授予 PrismSpace 管理权限，请在主空间重新配置。</string>
     <string name="lz_pf_entry_hero_tag_warn">异常</string>
-    <string name="lz_pf_entry_export_title">把文件传到主空间</string>
-    <string name="lz_pf_entry_export_summary">点「分享」→ 选「导入到此空间 PrismSpace」→ 在 PrismSpace 内选「发送到另一空间」</string>
     <string name="lz_pf_entry_footer">管理与设置请在主空间 PrismSpace 应用中进行。</string>
     <string name="lz_pf_entry_topbar">双开空间</string>
     <string name="lz_pf_entry_back_hint">想回到主空间？用系统的「最近任务」或桌面的个人 / 工作切换器切回即可。</string>
 
     <!-- FilesScreen -->
     <string name="lz_pf_files_title">文件</string>
-    <string name="lz_pf_files_send_other">发送到双开空间</string>
-    <string name="lz_pf_files_send_other_summary">从主空间选择文件，复制到双开空间的下载目录。</string>
-    <string name="lz_pf_direction_to_main">传到主空间</string>
-    <string name="lz_pf_direction_to_profile">传到双开空间</string>
-    <string name="lz_pf_files_step1">在双开空间中选择文件，点击系统「分享」。</string>
-    <string name="lz_pf_files_step2">在分享面板选择「导入到此空间 PrismSpace」；找不到时再切换「个人 / 工作」标签。</string>
-    <string name="lz_pf_files_step3">在 PrismSpace 内选择「发送到另一空间」，传回主空间并等待明确结果。</string>
-    <string name="lz_pf_files_step4">等待明确的成功或分类失败结果。</string>
-    <string name="lz_pf_files_tab_hint">最终保存空间以 PrismSpace 内的选择为准。部分系统打开接收入口时不会保留分享面板的「个人 / 工作」标签。</string>
+    <string name="lz_pf_files_send_other_summary">选择文件复制到双开空间：图片放入 Pictures/PrismSpace，其他文件放入 Download/PrismSpace。</string>
+    <string name="lz_pf_files_step1">在双开空间打开 PrismSpace，点「发到主空间」。</string>
+    <string name="lz_pf_files_step2">或在任意应用中点「分享」→「发到另一空间」。</string>
+    <string name="lz_pf_files_step3">确认后等待结果，文件会出现在主空间的 Download/PrismSpace（图片在 Pictures/PrismSpace）。</string>
+    <string name="lz_pf_files_tab_hint">PrismSpace 按文件来源自动决定目标：总是发到另一个空间，与分享面板显示「个人」还是「工作」标签无关。</string>
     <string name="lz_pf_files_return_title">如何从双开空间传回文件</string>
-    <string name="lz_pf_open_folder">打开文件夹</string>
     <string name="lz_pf_choose_files">选择文件</string>
     <string name="lz_pf_files_history_title">传输记录</string>
     <string name="lz_pf_files_clear">清空</string>
     <string name="lz_pf_files_clear_confirm_title">清空传输记录？</string>
     <string name="lz_pf_files_clear_confirm_body">仅清空下方的记录列表，已传输的文件不会被删除。</string>
-    <string name="lz_pf_files_history_empty">暂无传输记录。用上面的方式分享文件到此空间后会出现在这里。</string>
-    <string name="lz_pf_open_action">打开</string>
     <string name="lz_pf_open_fail">无法直接打开，请在系统文件管理器的 下载/PrismSpace 里查看。</string>
     <!-- 普通模式前台安装 -->
     <string name="lz_pf_install">安装</string>
     <string name="lz_pf_entry_pending_installs">待安装</string>
     <string name="lz_pf_entry_pending_ready">安装包已就绪 · 由 Android 询问你</string>
-    <string name="lz_pf_entry_send_to_main">发送文件到主空间</string>
     <string name="lz_files_gate_suspended">请先在设置中恢复双开空间，然后再发送文件</string>
     <string name="lz_files_gate_locked">请先解锁双开空间（锁屏密码），然后再发送文件</string>
     <string name="lz_files_gate_bridge">请先在设置中修复双开空间连接，然后再发送文件</string>

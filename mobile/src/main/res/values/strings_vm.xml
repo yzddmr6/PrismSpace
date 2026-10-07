@@ -15,10 +15,6 @@
     <string name="lz_vm_default_space_name">Dual space</string>
 
     <!-- ActionFeedback: files import -->
-    <string name="lz_vm_files_imported">Imported %1$d files</string>
-    <string name="lz_vm_files_import_all_failed">Import failed: %1$d files could not be imported</string>
-    <string name="lz_vm_files_import_partial">Import finished: %1$d succeeded, %2$d failed</string>
-    <string name="lz_vm_files_import_detailed">Import finished: %1$d succeeded, %2$d skipped (over limit), %3$d failed</string>
 
     <!-- ActionFeedback: batch actions -->
     <string name="lz_vm_batch_freeze_ok">Froze %1$d apps</string>

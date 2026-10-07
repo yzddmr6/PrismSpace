@@ -16,7 +16,7 @@
     <string name="lz_set_export_logs_title">匯出診斷資訊</string>
     <string name="lz_set_export_logs_summary">包含執行記錄和裝置狀態，不包含檔案內容</string>
     <string name="lz_set_about_summary">專案介紹、版本與開源資訊</string>
-    <string name="lz_pf_files_step1">在雙開空間中選擇檔案，點選系統「分享」。</string>
+    <string name="lz_pf_files_step1">在雙開空間開啟 PrismSpace，點「傳到主空間」。</string>
     <string name="lz_shell_prepare_read">1 · 已讀取完整安裝檔（含全部分包）</string>
     <string name="lz_shell_prepare_copy">2 · 正在複製到雙開空間</string>
     <string name="lz_shell_prepare_copied">2 · 已複製到雙開空間</string>

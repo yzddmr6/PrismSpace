@@ -4,38 +4,28 @@
     <string name="lz_pf_entry_hero_title_warn">PrismSpace not ready</string>
     <string name="lz_pf_entry_hero_body_warn">This work profile has not granted PrismSpace management permission. Please reconfigure it in the main space.</string>
     <string name="lz_pf_entry_hero_tag_warn">Error</string>
-    <string name="lz_pf_entry_export_title">Send files to the main space</string>
-    <string name="lz_pf_entry_export_summary">Tap “Share” → choose “Import into this space PrismSpace” → in PrismSpace choose “Send to the other space”</string>
     <string name="lz_pf_entry_footer">Management and settings should be done in the main space PrismSpace app.</string>
     <string name="lz_pf_entry_topbar">Dual space</string>
     <string name="lz_pf_entry_back_hint">Want to go back to the main space? Use the system Recents or the personal / work switcher on your home screen.</string>
 
     <!-- FilesScreen -->
     <string name="lz_pf_files_title">Files</string>
-    <string name="lz_pf_files_send_other">Send to dual space</string>
-    <string name="lz_pf_files_send_other_summary">Choose files from main space and copy them to Downloads in dual space.</string>
-    <string name="lz_pf_direction_to_main">To main space</string>
-    <string name="lz_pf_direction_to_profile">To dual space</string>
-    <string name="lz_pf_files_step1">In dual space, select a file and tap Share.</string>
-    <string name="lz_pf_files_step2">Choose “Import into this space PrismSpace” in the share panel. Switch Personal / Work only if needed to find it.</string>
-    <string name="lz_pf_files_step3">Choose Send to other space in PrismSpace and wait for the transfer result.</string>
-    <string name="lz_pf_files_step4">Wait for the success or classified failure result.</string>
-    <string name="lz_pf_files_tab_hint">The final destination is determined by the choice inside PrismSpace. Some systems do not preserve the share panel’s Personal / Work tab when opening the receiver.</string>
+    <string name="lz_pf_files_send_other_summary">Pick files here to copy them into the dual space: images go to Pictures/PrismSpace, other files to Download/PrismSpace.</string>
+    <string name="lz_pf_files_step1">In the dual space, open PrismSpace and tap “Send to main space”.</string>
+    <string name="lz_pf_files_step2">Or, in any app, tap Share → “Send to other space”.</string>
+    <string name="lz_pf_files_step3">Confirm and wait for the result. Files appear in the main space under Download/PrismSpace (images under Pictures/PrismSpace).</string>
+    <string name="lz_pf_files_tab_hint">PrismSpace picks the destination from where the file comes from: it always goes to the other space, whichever Personal / Work tab the share panel shows.</string>
     <string name="lz_pf_files_return_title">How to send files back from the dual space</string>
-    <string name="lz_pf_open_folder">Open folder</string>
     <string name="lz_pf_choose_files">Choose files</string>
     <string name="lz_pf_files_history_title">Transfer history</string>
     <string name="lz_pf_files_clear">Clear</string>
     <string name="lz_pf_files_clear_confirm_title">Clear transfer history?</string>
     <string name="lz_pf_files_clear_confirm_body">This only clears the log below — your transferred files are not deleted.</string>
-    <string name="lz_pf_files_history_empty">No transfers yet. Once you share a file into this space using the method above, it will appear here.</string>
-    <string name="lz_pf_open_action">Open</string>
     <string name="lz_pf_open_fail">Could not open it directly. Look under Download/PrismSpace in your system file manager.</string>
     <!-- Foreground install in Normal mode -->
     <string name="lz_pf_install">Install</string>
     <string name="lz_pf_entry_pending_installs">Pending install</string>
     <string name="lz_pf_entry_pending_ready">Package ready · Android asks you to confirm</string>
-    <string name="lz_pf_entry_send_to_main">Send files to the main space</string>
     <string name="lz_files_gate_suspended">Resume the dual space in Settings before sending files</string>
     <string name="lz_files_gate_locked">Unlock the dual space (lock-screen password) before sending files</string>
     <string name="lz_files_gate_bridge">Repair the dual-space connection in Settings before sending files</string>

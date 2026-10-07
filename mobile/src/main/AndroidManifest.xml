@@ -84,19 +84,6 @@
         </activity>
 
         <activity
-            android:name="com.yzddmr6.prismspace.prism.ui.ProfileImagePickerActivity"
-            android:excludeFromRecents="true"
-            android:noHistory="true"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="com.yzddmr6.prismspace.action.PROFILE_IMAGE_PICKER" />
-                <category android:name="com.yzddmr6.prismspace.category.MANAGED_PROFILE" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-        </activity>
-
-        <activity
             android:name="com.yzddmr6.prismspace.prism.ui.ProfileDownloadsActivity"
             android:excludeFromRecents="true"
             android:noHistory="true"
@@ -109,25 +96,45 @@
             </intent-filter>
         </activity>
 
-        <!-- Parent-side receiver for 双→主 export: the dual space forwards a picked file here via
-             CATEGORY_PARENT_PROFILE (FLAG_MANAGED_CAN_ACCESS_PARENT). Runs in the main user, writes
-             the received file into the main MediaStore. Normal permissions only. -->
+        <!-- "Send to other space" share target, present in both spaces. The target space is derived from
+             the user that owns each shared URI, not from the Personal / Work tab: vendor share proxies
+             do not reliably preserve the tab as the receiving user. Every external launch (share sheet
+             or explicit intent) passes a one-time confirmation. Only file-like types are declared, so
+             plain-text shares (text/plain) do not offer this target. -->
         <activity
             android:name="com.yzddmr6.prismspace.prism.ui.ImportToSpaceActivity"
-            android:label="导入到此空间 PrismSpace"
+            android:label="@string/lz_xfer_share_target_label"
             android:excludeFromRecents="true"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:theme="@style/AppTheme.TransferSheet"
             android:exported="true">
-            <!-- Unified bidirectional file transfer via the system SHARE chooser. PrismSpace is in both
-                 spaces, so this target shows under the Personal/Work tabs: Personal imports to the
-                 main space, Work imports to the dual space. -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <action android:name="android.intent.action.SEND_MULTIPLE" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="*/*" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="application/*" />
+                <data android:mimeType="font/*" />
+                <data android:mimeType="model/*" />
+                <data android:mimeType="text/csv" />
+                <data android:mimeType="text/html" />
+                <data android:mimeType="text/xml" />
+                <data android:mimeType="text/calendar" />
+                <data android:mimeType="text/vcard" />
+                <data android:mimeType="text/markdown" />
             </intent-filter>
         </activity>
+
+        <!-- Opens a transferred file / its folder inside the user that owns it. Started by PrismSpace in
+             the other space through CrossProfileApps (same package), so it is not exported. -->
+        <activity
+            android:name="com.yzddmr6.prismspace.prism.transfer.TransferOpenActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:exported="false" />
 
         <activity android:name="com.yzddmr6.prismspace.shortcut.PrismAppShortcut$ShortcutLauncher"
             android:hardwareAccelerated="false"

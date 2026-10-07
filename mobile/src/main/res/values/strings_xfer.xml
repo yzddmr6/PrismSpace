@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Unified cross-space file transfer: share target, transfer sheet, ledger list, open actions. -->
+    <string name="lz_xfer_share_target_label">Send to other space</string>
+    <string name="lz_xfer_send_to_dual">Send to dual space</string>
+    <string name="lz_xfer_send_to_main">Send to main space</string>
+    <string name="lz_xfer_space_main">main space</string>
+    <string name="lz_xfer_space_dual">dual space</string>
+    <string name="lz_xfer_resolving">Reading files…</string>
+    <string name="lz_xfer_confirm_title">Send to the %1$s?</string>
+    <string name="lz_xfer_confirm_count">%1$d file(s)</string>
+    <string name="lz_xfer_confirm_dest_images">Images → Pictures/PrismSpace</string>
+    <string name="lz_xfer_confirm_dest_files">Other files → Download/PrismSpace</string>
+    <string name="lz_xfer_confirm_skipped">%1$d item(s) can\'t be read and will be skipped</string>
+    <string name="lz_xfer_size_unknown">Size unknown</string>
+    <string name="lz_xfer_action_send">Send</string>
+    <string name="lz_xfer_action_cancel">Cancel</string>
+    <string name="lz_xfer_action_done">Done</string>
+    <string name="lz_xfer_action_close">Close</string>
+    <string name="lz_xfer_progress_item">Sending %1$d/%2$d: %3$s</string>
+    <string name="lz_xfer_progress_hint">Leaving this screen cancels the transfer.</string>
+    <string name="lz_xfer_result_all">Sent %1$d file(s) to the %2$s</string>
+    <string name="lz_xfer_result_cancelled">Sent %1$d/%2$d, the rest were cancelled</string>
+    <string name="lz_xfer_result_partial">Sent %1$d/%2$d</string>
+    <string name="lz_xfer_result_none">Nothing was sent</string>
+    <string name="lz_xfer_item_sent">Sent</string>
+    <string name="lz_xfer_item_cancelled">Cancelled</string>
+    <string name="lz_xfer_fail_source_unreadable">The source file can\'t be read</string>
+    <string name="lz_xfer_fail_space_unavailable">The %1$s is unavailable. Resume or unlock it first.</string>
+    <string name="lz_xfer_fail_bridge">The connection between spaces isn\'t ready. Repair the dual space and retry.</string>
+    <string name="lz_xfer_fail_target_write">Couldn\'t finish writing in the %1$s. No partial file was kept.</string>
+    <string name="lz_xfer_reject_no_file">No file was received</string>
+    <string name="lz_xfer_reject_mixed_sources">Only files from one space can be sent at a time</string>
+    <string name="lz_xfer_reject_unmanaged_source">These files don\'t belong to the main space or the dual space</string>
+    <string name="lz_xfer_row_sent">Sent · %1$s</string>
+    <string name="lz_xfer_row_received_from">Received · from %1$s</string>
+    <string name="lz_xfer_row_received">Received</string>
+    <string name="lz_xfer_kind_apk_suite">App package</string>
+    <string name="lz_xfer_open_folder">Open folder</string>
+    <string name="lz_xfer_open_file">Open file</string>
+    <string name="lz_xfer_remove_record">Remove record</string>
+    <string name="lz_xfer_open_uri_unknown">Saved by an older version; the file location wasn\'t recorded.</string>
+    <string name="lz_xfer_open_missing">The file no longer exists</string>
+    <string name="lz_xfer_open_no_viewer">No app can open this file</string>
+    <string name="lz_xfer_open_failed">Couldn\'t open it in the %1$s</string>
+    <string name="lz_xfer_open_handoff">Opening in the %1$s…</string>
+    <string name="lz_xfer_picker_unavailable">The system file picker isn\'t available</string>
+    <string name="lz_xfer_history_empty">No transfers yet. Files you send or receive appear here.</string>
+    <string name="lz_files_open_gate_suspended">Resume the dual space in Settings before opening files</string>
+    <string name="lz_files_open_gate_locked">Unlock the dual space (lock-screen password) before opening files</string>
+    <string name="lz_files_open_gate_bridge">Repair the dual-space connection in Settings before opening files</string>
+    <string name="lz_files_open_gate_missing">Set up the dual space before opening files</string>
+    <string name="lz_files_open_gate_unknown">Repair the dual space in Settings before opening files</string>
+</resources>

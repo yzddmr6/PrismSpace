@@ -45,7 +45,7 @@ class PrismLocaleContractTest {
             .filter { it.extension == "xml" }
             .flatMap { stringsIn(it).keys }
             .toSet()
-        listOf("strings_chrome", "strings_home", "strings_app", "strings_space").forEach { family ->
+        listOf("strings_chrome", "strings_home", "strings_app", "strings_space", "strings_xfer").forEach { family ->
             val zhKeys = stringsIn("mobile/src/main/res/values-zh/$family.xml").keys
             val missing = zhKeys - tw
             assertEquals("values-zh-rTW missing $family keys: $missing", emptySet<String>(), missing)
