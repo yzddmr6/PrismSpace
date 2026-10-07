@@ -4,42 +4,14 @@ import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.widget.Toast
 import com.yzddmr6.prismspace.analytics.DiagnosticLog
 import com.yzddmr6.prismspace.engine.PrismManager
-import com.yzddmr6.prismspace.mobile.R
 import com.yzddmr6.prismspace.util.DevicePolicies
-import com.yzddmr6.prismspace.util.PrismLocale
 
 /**
-	 * Open the system file manager so the user can locate a transferred file.
-	 *
-	 * In the work profile the Downloads/Files viewer (DocumentsUI) may be installed but
-	 * suspended by policy. As the profile owner we can lift hide/suspend (and enable a
-	 * still-disabled system viewer) before launching, so the tap actually opens the file list.
- *
- * We deliberately do NOT ACTION_VIEW the recorded file directly: for APKs, install is a separate,
- * explicit action so split packages can use a foreground PackageInstaller session; for other types a
- * direct viewer is a surprising side-trip. Opening the file manager stays consistent for every
- * transfer record, while the chooser also exposes Xiaomi's file manager when it is installed.
+ * The Downloads / Xiaomi file-manager chooser: the last-resort "open folder" surface when no handler
+ * opens the PrismSpace folder itself (see [com.yzddmr6.prismspace.prism.transfer.TransferOpener]).
  */
-fun openSystemFileManager(context: Context) {
-    val loc = PrismLocale.wrap(context)
-    DiagnosticLog.i(TAG, "open system file manager requested")
-    if (!prepareDownloadsViewerUsable(context)) {
-        DiagnosticLog.w(TAG, "open system file manager unavailable after recovery")
-        Toast.makeText(context, loc.getString(R.string.lz_pf_open_fail), Toast.LENGTH_LONG).show()
-        return
-    }
-    val intent = SystemFileManagerLaunchPlanner.buildChooserIntent(context, loc.getString(R.string.lz_pf_open_action))
-    if (runCatching { context.startActivity(intent); true }.getOrDefault(false)) {
-        DiagnosticLog.i(TAG, "open system file manager chooser launched")
-        return
-    }
-    DiagnosticLog.w(TAG, "open system file manager failed")
-    Toast.makeText(context, loc.getString(R.string.lz_pf_open_fail), Toast.LENGTH_LONG).show()
-}
-
 internal object SystemFileManagerLaunchPlanner {
     const val ACTION_XIAOMI_FILE_MANAGER_HOME = "com.android.fileexplorer.export.VIEW_HOME"
     const val ACTION_XIAOMI_OPEN_DOCUMENT = "hyper.intent.action.OPEN_DOCUMENT"

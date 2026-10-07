@@ -31,6 +31,7 @@ import com.yzddmr6.prismspace.util.Modules;
 import com.yzddmr6.prismspace.util.PrismLocale;
 import com.yzddmr6.prismspace.util.Scopes;
 import com.yzddmr6.prismspace.util.Users;
+import com.yzddmr6.prismspace.prism.transfer.TransferOpenRequests;
 
 import java.util.List;
 import java.util.Optional;
@@ -99,6 +100,12 @@ public class MainActivity extends FragmentActivity {
 		// Launcher taps on a running task land here. Do NOT signal reset-to-Home — that would
 		// override the last visited tab. The signal only fires on fresh MainActivity creation
 		// (see startMainUi below, gated on savedInstanceState == null).
+	}
+
+	/** A pending "open this transferred file" request parked by the dual space; drained in the foreground. */
+	@Override protected void onResume() {
+		super.onResume();
+		if (Users.isParentProfile()) TransferOpenRequests.drain(this);
 	}
 
 	@Override protected void onPostResume() {

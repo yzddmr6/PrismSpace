@@ -23,18 +23,10 @@ import com.yzddmr6.prismspace.util.Users
 /**
  * Opens user-facing entry points inside the managed profile.
  *
- * This is intentionally separate from [FileBridgeService]: file bridge copies bytes and records
- * history; this launcher owns the Android cross-profile contract and permission handoff.
+ * This is intentionally separate from [FileBridgeService]: file bridge copies bytes; this launcher
+ * owns the Android cross-profile contract and permission handoff for the profile install entry.
  */
 internal class ProfileDownloadsOpener {
-
-    fun openDownloadsFolder(activity: Activity): FileTransferResult =
-        open(
-            activity,
-            ProfileDownloadsLauncher::buildDirectProfileActivityIntent,
-            { ProfileDownloadsLauncher.buildCrossProfileActivityIntent() },
-            preferProfileEntry = true,
-        )
 
     fun openInstallEntry(activity: Activity): FileTransferResult =
         open(
@@ -42,14 +34,6 @@ internal class ProfileDownloadsOpener {
             ProfileDownloadsLauncher::buildDirectProfileInstallEntryIntent,
             { ProfileDownloadsLauncher.buildCrossProfileInstallEntryIntent() },
             preferProfileEntry = true,
-        )
-
-    fun openInstallSourceSettings(activity: Activity, packageName: String): FileTransferResult =
-        open(
-            activity,
-            { appPackageName -> ProfileDownloadsLauncher.buildDirectProfileSourceSettingsIntent(appPackageName, packageName) },
-            { ProfileDownloadsLauncher.buildCrossProfileSourceSettingsIntent(packageName) },
-            preferProfileEntry = false,
         )
 
     private fun open(
@@ -162,11 +146,10 @@ internal class ProfileDownloadsOpener {
     }
 }
 
-/** Cross-profile launcher for opening the dual space's system Downloads UI. */
+/** Cross-profile trampoline into the dual space's PrismSpace install entry (foreground APK install). */
 internal object ProfileDownloadsLauncher {
     private const val ACTION_PROFILE_DOWNLOADS = "com.yzddmr6.prismspace.action.PROFILE_DOWNLOADS"
     const val EXTRA_OPEN_INSTALL_ENTRY = "com.yzddmr6.prismspace.extra.OPEN_INSTALL_ENTRY"
-    const val EXTRA_OPEN_SOURCE_SETTINGS_PACKAGE = "com.yzddmr6.prismspace.extra.OPEN_SOURCE_SETTINGS_PACKAGE"
 
     fun buildCrossProfileActivityIntent(): Intent =
         Intent(ACTION_PROFILE_DOWNLOADS)
@@ -182,29 +165,11 @@ internal object ProfileDownloadsLauncher {
     fun buildDirectProfileInstallEntryIntent(packageName: String): Intent =
         directProfileInstallEntryIntentSpec(packageName).toIntent()
 
-    fun buildCrossProfileSourceSettingsIntent(packageName: String): Intent =
-        buildCrossProfileActivityIntent().putExtra(EXTRA_OPEN_SOURCE_SETTINGS_PACKAGE, packageName)
-
-    fun buildDirectProfileSourceSettingsIntent(appPackageName: String, sourcePackageName: String): Intent =
-        directProfileSourceSettingsIntentSpec(appPackageName, sourcePackageName).toIntent()
-
     fun directProfileInstallEntryIntentSpec(packageName: String): DirectProfileDownloadsActivityIntentSpec =
         DirectProfileDownloadsActivityIntentSpec(
             packageName = packageName,
             className = profileActivityClassName(),
             openInstallEntry = true,
-            openSourceSettingsForPackage = null,
-        )
-
-    fun directProfileSourceSettingsIntentSpec(
-        appPackageName: String,
-        sourcePackageName: String,
-    ): DirectProfileDownloadsActivityIntentSpec =
-        DirectProfileDownloadsActivityIntentSpec(
-            packageName = appPackageName,
-            className = profileActivityClassName(),
-            openInstallEntry = false,
-            openSourceSettingsForPackage = sourcePackageName,
         )
 
     fun crossProfileInstallEntryIntentSpec(): ProfileDownloadsActivityIntentSpec =
@@ -212,15 +177,6 @@ internal object ProfileDownloadsLauncher {
             action = ACTION_PROFILE_DOWNLOADS,
             categories = setOf(CrossProfile.CATEGORY_MANAGED_PROFILE, Intent.CATEGORY_DEFAULT),
             openInstallEntry = true,
-            openSourceSettingsForPackage = null,
-        )
-
-    fun crossProfileSourceSettingsIntentSpec(packageName: String): ProfileDownloadsActivityIntentSpec =
-        ProfileDownloadsActivityIntentSpec(
-            action = ACTION_PROFILE_DOWNLOADS,
-            categories = setOf(CrossProfile.CATEGORY_MANAGED_PROFILE, Intent.CATEGORY_DEFAULT),
-            openInstallEntry = false,
-            openSourceSettingsForPackage = packageName,
         )
 
     fun crossProfileActivityIntentFilter(): IntentFilter =
@@ -256,7 +212,6 @@ internal object ProfileDownloadsLauncher {
     private fun DirectProfileDownloadsActivityIntentSpec.toIntent(): Intent =
         buildDirectProfileActivityIntent(packageName).apply {
             if (openInstallEntry) putExtra(EXTRA_OPEN_INSTALL_ENTRY, true)
-            openSourceSettingsForPackage?.let { putExtra(EXTRA_OPEN_SOURCE_SETTINGS_PACKAGE, it) }
         }
 }
 
@@ -264,14 +219,12 @@ internal data class ProfileDownloadsActivityIntentSpec(
     val action: String,
     val categories: Set<String>,
     val openInstallEntry: Boolean,
-    val openSourceSettingsForPackage: String?,
 )
 
 internal data class DirectProfileDownloadsActivityIntentSpec(
     val packageName: String,
     val className: String,
     val openInstallEntry: Boolean,
-    val openSourceSettingsForPackage: String?,
 )
 
 internal object CrossProfileAccessPrompt {

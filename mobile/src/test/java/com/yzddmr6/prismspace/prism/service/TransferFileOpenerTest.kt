@@ -5,6 +5,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.yzddmr6.prismspace.prism.transfer.TransferKind
+import com.yzddmr6.prismspace.prism.transfer.TransferLedgerRecord
+import com.yzddmr6.prismspace.prism.transfer.TransferRole
+import com.yzddmr6.prismspace.prism.transfer.displayTitle
 
 class TransferFileOpenerTest {
 
@@ -20,31 +24,29 @@ class TransferFileOpenerTest {
         )
     }
 
-    @Test fun apkTransferRecordsArePlainHistoryRows() {
-        // APK 安装条目不再出现在传输记录（文件页/入口页记录行只承诺「打开文件夹」）——
-        // TransferRecordActions 已删除；记录仅承载展示数据。
-        val record = TransferRecord(
-            name = "Via",
-            packageName = "mark.via",
-            location = "Download/PrismSpace",
-            isImage = false,
-            timeMillis = 1L,
-        )
-
-        assertEquals("Via-mark.via", record.displayTitle())
+    @Test fun apkSuiteLedgerRowsTitleAsLabelAndPackage() {
+        assertEquals("Via-mark.via", ledgerRecord(name = "Via", packageName = "mark.via", kind = TransferKind.ApkSuite).displayTitle())
     }
 
-    @Test fun plainTransferRecordsDisplayByName() {
-        val record = TransferRecord(
-            name = "report.pdf",
-            packageName = null,
-            location = "Download/PrismSpace",
-            isImage = false,
-            timeMillis = 1L,
-        )
-
-        assertEquals("report.pdf", record.displayTitle())
+    @Test fun plainLedgerRowsDisplayByName() {
+        assertEquals("report.pdf", ledgerRecord(name = "report.pdf", packageName = null, kind = TransferKind.File).displayTitle())
     }
+
+    private fun ledgerRecord(name: String, packageName: String?, kind: TransferKind) = TransferLedgerRecord(
+        id = "id",
+        displayName = name,
+        mime = null,
+        sizeBytes = null,
+        contentUri = null,
+        relativePath = "Download/PrismSpace",
+        direction = null,
+        role = TransferRole.Received,
+        kind = kind,
+        packageName = packageName,
+        apkUris = emptyList(),
+        timeMillis = 1L,
+        legacy = true,
+    )
 
     @Test fun crossProfileForwarderIsNotAFileSurface() {
         assertFalse(isSystemFileSurfacePackage("android"))

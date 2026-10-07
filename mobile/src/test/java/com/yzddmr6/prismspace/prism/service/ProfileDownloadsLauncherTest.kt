@@ -20,12 +20,6 @@ class ProfileDownloadsLauncherTest {
         assertTrue(spec.openInstallEntry)
     }
 
-    @Test fun sourceSettingsSpecCarriesTargetPackage() {
-        val spec = ProfileDownloadsLauncher.crossProfileSourceSettingsIntentSpec("com.android.fileexplorer")
-
-        assertEquals("com.android.fileexplorer", spec.openSourceSettingsForPackage)
-    }
-
     @Test fun installEntryIntentTargetsProfileDownloadsInRequestedProfile() {
         val spec = ProfileDownloadsLauncher.directProfileInstallEntryIntentSpec("com.example.prism")
 
@@ -39,16 +33,5 @@ class ProfileDownloadsLauncherTest {
             "com.yzddmr6.prismspace.settings.PrismSettingsActivity",
             ProfileDownloadsLauncher.profileEntryClassName(),
         )
-    }
-
-    @Test fun sourceSettingsIntentTargetsProfileDownloadsInRequestedProfile() {
-        val spec = ProfileDownloadsLauncher.directProfileSourceSettingsIntentSpec(
-            "com.example.prism",
-            "com.android.fileexplorer",
-        )
-
-        assertEquals("com.example.prism", spec.packageName)
-        assertEquals("com.yzddmr6.prismspace.prism.ui.ProfileDownloadsActivity", spec.className)
-        assertEquals("com.android.fileexplorer", spec.openSourceSettingsForPackage)
     }
 }

@@ -8,36 +8,23 @@ import android.os.Bundle
 import com.yzddmr6.prismspace.analytics.DiagnosticLog
 import android.widget.Toast
 import com.yzddmr6.prismspace.mobile.R
-import com.yzddmr6.prismspace.prism.service.InstallSourcePermissionHelper
-import com.yzddmr6.prismspace.prism.service.ProfileDownloadsLauncher
-import com.yzddmr6.prismspace.prism.service.openSystemFileManager
 import com.yzddmr6.prismspace.settings.PrismSettingsActivity
 import com.yzddmr6.prismspace.util.PrismLocale
 
 /**
- * Trampoline that runs INSIDE the dual space (work profile), reached via cross-profile intent
- * forwarding from the main app (see FileBridgeService.openProfileDownloadsFolder). It opens the
- * system file-manager chooser in the profile so the user can find transferred files under
- * Download/PrismSpace. APK install is a separate explicit entry so split packages use a foreground
- * PackageInstaller session instead of relying on whichever file manager opened the folder.
+ * Trampoline that runs INSIDE the dual space (work profile), reached from the main space through
+ * the PROFILE_DOWNLOADS cross-profile forwarding (see ProfileDownloadsOpener.openInstallEntry). It
+ * always opens the dual-space PrismSpace entry, where a cloned APK suite is installed through a
+ * foreground PackageInstaller session (split packages included).
  *
- * Mirrors [ProfileImagePickerActivity]. Translucent + noHistory + finishes immediately.
+ * Translucent + noHistory + finishes immediately.
  */
 class ProfileDownloadsActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         try {
-            intent.getStringExtra(ProfileDownloadsLauncher.EXTRA_OPEN_SOURCE_SETTINGS_PACKAGE)?.let { packageName ->
-                if (!InstallSourcePermissionHelper.openInstallSourceSettingsOrFallback(this, packageName)) {
-                    openProfileEntryForForegroundInstall()
-                }
-                return
-            }
-            if (intent.getBooleanExtra(ProfileDownloadsLauncher.EXTRA_OPEN_INSTALL_ENTRY, false)) {
-                openProfileEntryForForegroundInstall()
-                return
-            }
-            openSystemFileManager(this)
+            // With or without EXTRA_OPEN_INSTALL_ENTRY the only remaining destination is the entry.
+            openProfileEntryForForegroundInstall()
         } catch (e: Throwable) {
             DiagnosticLog.e(TAG, "Unable to open profile downloads", e)
         } finally {

@@ -11,6 +11,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import com.yzddmr6.prismspace.PrismNameManager
 import com.yzddmr6.prismspace.notification.NotificationPermissionPrompt
+import com.yzddmr6.prismspace.prism.transfer.TransferOpenRequests
 import com.yzddmr6.prismspace.settings.profile.PrismProfileEntryScreen
 import com.yzddmr6.prismspace.shuttle.ShuttleProvider
 import com.yzddmr6.prismspace.shortcut.PrismAppShortcut
@@ -54,6 +55,12 @@ class PrismSettingsActivity : ComponentActivity() {
                 .onFailure { Log.w(TAG, "syncNameToParentProfile failed", it) }
         }
         setContent { PrismProfileEntryScreen() }
+    }
+
+    /** onResume, not onCreate: the main space may only bring an already running entry to the front. */
+    override fun onResume() {
+        super.onResume()
+        if (! Users.isParentProfile()) TransferOpenRequests.drain(this)
     }
 
     /**
