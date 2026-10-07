@@ -68,20 +68,36 @@ val SYSTEM_ENTRY_ACTIONS: List<String> = listOf(android.provider.Settings.ACTION
                 .filter { it.serviceInfo.applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0 }
                 .mapTo(HashSet()) { it.packageName }
         }.getOrDefault(emptySet())
-        // 5. Action entries: resolved in this profile, only for packages without a launcher entry.
-        val entryActions = LinkedHashMap<String, String>()
-        SYSTEM_ENTRY_ACTIONS.forEach { action ->
-            val pkg = runCatching { pm.resolveActivity(Intent(action), PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName }
-                .getOrNull() ?: return@forEach
-            if (pkg != "android" && pkg !in enabledLauncher && pkg !in entryActions) entryActions[pkg] = action
-        }
+        val critical = SystemAppsManager.detectCriticalSystemPackages(pm)
         return SystemAppFacts(
             facts = facts,
-            critical = SystemAppsManager.detectCriticalSystemPackages(pm),
+            critical = critical,
             exempt = exempt,
             enabledLauncherPackages = enabledLauncher,
-            entryActions = entryActions,
+            entryActions = collectEntryActions(pm, enabledLauncher, critical),
         )
+    }
+
+    /**
+     * Action entries for packages without an enabled launcher entry. An unqualified query is not
+     * enough: a managed profile's Settings registers a skip-current-profile filter that forwards
+     * ACTION_SETTINGS to the parent, which hides its own handler. Package-qualified queries bypass
+     * cross-profile resolution, so the profile's own handler is found among the critical packages
+     * (the ACTION_SETTINGS handler is always critical, see SystemAppsManager).
+     */
+    private fun collectEntryActions(pm: PackageManager, enabledLauncher: Set<String>, critical: Set<String>): Map<String, String> {
+        val entryActions = LinkedHashMap<String, String>()
+        SYSTEM_ENTRY_ACTIONS.forEach { action ->
+            val direct = runCatching { pm.resolveActivity(Intent(action), PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName }
+                .getOrNull()?.takeIf { it != "android" }
+            val owner = (listOfNotNull(direct) + critical.sorted()).firstOrNull { pkg ->
+                pkg !in enabledLauncher && pkg !in entryActions && runCatching {
+                    pm.queryIntentActivities(Intent(action).setPackage(pkg), PackageManager.MATCH_DEFAULT_ONLY).isNotEmpty()
+                }.getOrDefault(false)
+            } ?: return@forEach
+            entryActions[owner] = action
+        }
+        return entryActions
     }
 
     private fun ApplicationInfo.toFact(launcherPackages: Set<String>) = PackageFact(
