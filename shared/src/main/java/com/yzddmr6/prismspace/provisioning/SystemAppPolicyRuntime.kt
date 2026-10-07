@@ -201,10 +201,13 @@ internal class SystemAppPolicyEngine(
         val results = LinkedHashMap<String, PackageResult>()
         var applied = 0
         plans.forEach { plan ->
-            val outcome = if (plan.steps.isEmpty()) PackageOutcome.Unchanged else execute(plan, targets.getValue(plan.pkg))
+            // A critical package absent from this device is re-checked every pass; log it only once.
+            val quiet = plan.pkg in collected.critical && state.lastApplied[plan.pkg] == plan.target
+            val outcome = if (plan.steps.isEmpty()) PackageOutcome.Unchanged else execute(plan, targets.getValue(plan.pkg), quiet)
             if (plan.steps.isNotEmpty()) applied++
             // Report every forced or target-changed package; healthy critical packages stay quiet.
-            if (plan.pkg in force || state.lastApplied[plan.pkg] != plan.target || outcome != PackageOutcome.Unchanged)
+            if (plan.pkg in force || state.lastApplied[plan.pkg] != plan.target ||
+                    (outcome != PackageOutcome.Unchanged && !(quiet && outcome == PackageOutcome.Absent)))
                 results[plan.pkg] = PackageResult(plan.target, outcome)
         }
         val lastApplied = LinkedHashMap<String, SystemAppTarget>()
@@ -223,7 +226,7 @@ internal class SystemAppPolicyEngine(
         return report
     }
 
-    private fun execute(plan: PackagePlan, target: TargetState): PackageOutcome {
+    private fun execute(plan: PackagePlan, target: TargetState, quiet: Boolean): PackageOutcome {
         val executed = ArrayList<SystemAppStep>()
         val outcome = try {
             runSteps(plan.pkg, plan.steps, executed) ?: verify(plan, target, executed)
@@ -239,8 +242,9 @@ internal class SystemAppPolicyEngine(
             PackageOutcome.Absent -> "absent"
             PackageOutcome.Failed -> "failed:${executed.lastOrNull() ?: plan.steps.first()}"
         }
-        log("policy_step pkg=${plan.pkg} target=${if (plan.target == SystemAppTarget.Available) "A" else "U"}" +
-            " from=$from steps=${executed.joinToString(",")} result=$result")
+        if (!(quiet && outcome == PackageOutcome.Absent))
+            log("policy_step pkg=${plan.pkg} target=${if (plan.target == SystemAppTarget.Available) "A" else "U"}" +
+                " from=$from steps=${executed.joinToString(",")} result=$result")
         return outcome
     }
 

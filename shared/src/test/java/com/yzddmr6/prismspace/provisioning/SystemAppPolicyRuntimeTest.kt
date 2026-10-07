@@ -221,6 +221,17 @@ class SystemAppPolicyRuntimeTest {
         assertFalse(IME in snapshot.policyHidden)
     }
 
+    @Test fun absentCriticalPackageIsLoggedOnlyOnce() {
+        val device = freshDevice().apply { remove(GMS) }      // A critical package this device does not have.
+        val port = FakePort(device, system - GMS)
+        val store = InMemorySystemAppPolicyPersistence()
+        engine(port, store).converge(ConvergeReason.Provision, 0)
+        assertEquals(1, logs.count { it.startsWith("policy_step pkg=$GMS") && it.endsWith("result=absent") })
+        logs.clear()
+        engine(port, store).converge(ConvergeReason.Incremental, 12)
+        assertTrue(logs.none { it.startsWith("policy_step pkg=$GMS") })
+    }
+
     @Test fun selectionChangesAreBounded() {
         ApplySystemAppSelection(List(MAX_SYSTEM_APP_SELECTION_CHANGES) { SystemAppOverrideChange("p$it", SystemAppChoice.Clear) }, null)
         try {
