@@ -229,12 +229,6 @@ class BridgeCommandParcelTest {
                 assertNotNull(actual.descriptor)
                 actual.descriptor.close()
             }
-            expected is ReadSessionDto && actual is ReadSessionDto -> {
-                assertEquals(expected.displayName, actual.displayName)
-                assertEquals(expected.mimeType, actual.mimeType)
-                assertNotNull(actual.descriptor)
-                actual.descriptor.close()
-            }
             else -> assertEquals(expected, actual)
         }
     }
