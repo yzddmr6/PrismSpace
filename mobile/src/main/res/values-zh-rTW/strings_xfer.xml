@@ -50,4 +50,17 @@
     <string name="lz_files_open_gate_bridge">請先在設定中修復雙開空間連線，然後再開啟檔案</string>
     <string name="lz_files_open_gate_missing">請先建立雙開空間，然後再開啟檔案</string>
     <string name="lz_files_open_gate_unknown">請先在設定中修復雙開空間，然後再開啟檔案</string>
+    <string name="lz_xfer_share_continue">在另一空間繼續分享</string>
+    <string name="lz_xfer_share_chooser_title">在%1$s中分享</string>
+    <string name="lz_xfer_share_handoff">正在%1$s中開啟分享面板…</string>
+    <string name="lz_xfer_share_skipped">%1$d 個檔案已不存在，未包含在分享中</string>
+    <string name="lz_xfer_share_missing">要分享的檔案已不存在</string>
+    <string name="lz_xfer_share_no_target">沒有可接收這些檔案的應用程式</string>
+    <string name="lz_xfer_share_failed">無法在%1$s中開啟分享面板</string>
+    <string name="lz_xfer_share_gate_suspended">請先在設定中恢復雙開空間，然後再繼續分享</string>
+    <string name="lz_xfer_share_gate_locked">請先解鎖雙開空間（螢幕鎖定密碼），然後再繼續分享</string>
+    <string name="lz_xfer_share_gate_bridge">請先在設定中修復雙開空間連線，然後再繼續分享</string>
+    <string name="lz_xfer_share_gate_missing">請先建立雙開空間，然後再繼續分享</string>
+    <string name="lz_xfer_share_gate_unknown">請先在設定中修復雙開空間，然後再繼續分享</string>
+    <string name="lz_xfer_clone_notice">本機有系統級雙開應用程式；若分享面板中選擇主空間應用程式後卡住，請改用 PrismSpace 的『傳到另一空間』再『在另一空間繼續分享』。</string>
 </resources>
