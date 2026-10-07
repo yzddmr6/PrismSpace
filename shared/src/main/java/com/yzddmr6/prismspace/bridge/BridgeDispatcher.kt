@@ -31,10 +31,10 @@ internal object BridgeDispatcher {
                 openWriteSession(context, command.store, command.safeName, command.mimeType, command.relativePath)
             }
             is FinishWriteSession -> fileBridge(command) {
-                finishWriteSession(context, command.store, command.targetUri, command.history)
+                finishWriteSession(context, command.store, command.targetUri, command.record)
             }
             is AbortWriteSession -> fileBridge(command) {
-                abortWriteSession(context, command.store, command.targetUri)
+                abortWriteSession(context, command.store, command.targetUri, command.transferId)
             }
             is ImportApkSet -> fileBridge(command) {
                 importApkSet(context, command.paths, command.label, command.packageName, command.cloneLocation)
@@ -45,15 +45,15 @@ internal object BridgeDispatcher {
             QueryPendingClonePreparations -> fileBridge(QueryPendingClonePreparations) {
                 queryPendingClonePreparations(context)
             }
-            QueryLatestVisibleImage -> fileBridge(QueryLatestVisibleImage) { queryLatestVisibleImage(context) }
-            OpenImagePickerInProfile -> fileBridge(OpenImagePickerInProfile) { openImagePicker(context) }
-            is OpenLatestForRead -> fileBridge(command) { openLatestForRead(context, command.store) }
-            is WritePerAppShareMarker -> fileBridge(command) { writePerAppShareMarker(context, command.packageName) }
-            is DeletePerAppShareMarker -> fileBridge(command) { deletePerAppShareMarker(context, command.packageName) }
             is RunBridgeSelfTest -> fileBridge(command) { runSelfTest(context, command.marker) }
             is InstallCrossProfileForwarding -> fileBridge(command) {
                 installCrossProfileForwarding(context, command.kind)
             }
+            is RecordTransfer -> fileBridge(command) { recordTransfer(context, command.record, command.contentUri) }
+            is InspectTransferredFile -> fileBridge(command) {
+                inspectTransferredFile(context, command.contentUri, command.mime, command.mode)
+            }
+            is QueueTransferOpen -> fileBridge(command) { queueTransferOpen(context, command.request) }
             is QueryProfileAppsPage -> appList(command) {
                 queryProfileApps(context, command.pageIndex, command.pageSize)
             }

@@ -85,7 +85,7 @@ object BridgeCommandCatalog {
         SetPackagesFrozen(listOf("example"), true),
         EnsureAppFreeToLaunch("example"),
     ) + FILE_BRIDGE_COMMAND_SAMPLES + SPACE_AND_SHORTCUT_COMMAND_SAMPLES + DIAGNOSTICS_COMMAND_SAMPLES +
-        SYSTEM_APP_COMMAND_SAMPLES
+        SYSTEM_APP_COMMAND_SAMPLES + TRANSFER_COMMAND_SAMPLES
 }
 
 internal const val RESULT = "result"

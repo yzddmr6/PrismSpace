@@ -122,6 +122,35 @@ class BridgeProtocolContractTest {
         assertTrue(source.contains("CoreBridgeOperations.requestAppUninstall(context, command.packageName)"))
     }
 
+    @Test fun transferCommandsAreDestinationCommandsAndDispatched() {
+        val transferCommands = listOf(
+            RecordTransfer::class.java,
+            InspectTransferredFile::class.java,
+            QueueTransferOpen::class.java,
+        )
+        transferCommands.forEach { type ->
+            val samples = BridgeCommandCatalog.all.filter { type.isInstance(it) }
+            assertEquals("${type.simpleName} must be enumerated exactly once", 1, samples.size)
+            assertTrue("${type.simpleName} must run in the user that owns the file", samples.single() is DestinationCommand<*>)
+        }
+        val dispatcher = File("src/main/java/com/yzddmr6/prismspace/bridge/BridgeDispatcher.kt").readText()
+        listOf("is RecordTransfer ->", "is InspectTransferredFile ->", "is QueueTransferOpen ->").forEach { branch ->
+            assertTrue("dispatcher must route $branch", dispatcher.contains(branch))
+        }
+    }
+
+    @Test fun removedFileCommandsStayRemoved() {
+        val ids = BridgeCommandCatalog.all.map { it.id }.toSet()
+        listOf(
+            "file.query_latest_visible_image",
+            "file.open_image_picker",
+            "file.open_latest_for_read",
+            "file.write_per_app_share_marker",
+            "file.delete_per_app_share_marker",
+        ).forEach { removed -> assertFalse("$removed must not come back", removed in ids) }
+        assertEquals(listOf(CrossProfileForwardingKind.ProfileDownloads), CrossProfileForwardingKind.entries.toList())
+    }
+
     private object FakeAppControlPort : AppControlPort {
         override fun setAppFrozen(context: Context, packageName: String, frozen: Boolean) = true
         override fun ensureAppHiddenState(context: Context, packageName: String, hidden: Boolean) = true
@@ -152,9 +181,14 @@ class BridgeProtocolContractTest {
             context: Context,
             store: BridgeFileStore,
             targetUri: String,
-            history: TransferHistoryDto?,
+            record: TransferLedgerDto?,
         ) = targetUri
-        override fun abortWriteSession(context: Context, store: BridgeFileStore, targetUri: String) = Unit
+        override fun abortWriteSession(
+            context: Context,
+            store: BridgeFileStore,
+            targetUri: String,
+            transferId: String?,
+        ) = Unit
         override fun importApkSet(
             context: Context,
             paths: List<String>,
@@ -163,13 +197,16 @@ class BridgeProtocolContractTest {
             cloneLocation: String,
         ): String? = null
         override fun completeClonePreparation(context: Context, packageName: String) = true
-        override fun queryLatestVisibleImage(context: Context): ProfileMediaEntryDto? = null
-        override fun openImagePicker(context: Context) = true
-        override fun openLatestForRead(context: Context, store: BridgeFileStore): ReadSessionDto? = null
-        override fun writePerAppShareMarker(context: Context, packageName: String) = "marker"
-        override fun deletePerAppShareMarker(context: Context, packageName: String) = true
         override fun runSelfTest(context: Context, marker: ByteArray): SelfTestResultDto? = null
         override fun installCrossProfileForwarding(context: Context, kind: CrossProfileForwardingKind) = true
+        override fun recordTransfer(context: Context, record: TransferLedgerDto, contentUri: String) = true
+        override fun inspectTransferredFile(
+            context: Context,
+            contentUri: String,
+            mime: String?,
+            mode: BridgeOpenMode,
+        ) = BridgeInspectResult.Exists
+        override fun queueTransferOpen(context: Context, request: TransferOpenRequestDto) = true
     }
 
     private object FakeAppListPort : AppListPort {

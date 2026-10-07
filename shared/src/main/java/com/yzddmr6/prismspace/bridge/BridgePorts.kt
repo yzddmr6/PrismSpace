@@ -27,9 +27,9 @@ interface FileBridgePort {
         context: Context,
         store: BridgeFileStore,
         targetUri: String,
-        history: TransferHistoryDto?,
+        record: TransferLedgerDto?,
     ): String
-    fun abortWriteSession(context: Context, store: BridgeFileStore, targetUri: String)
+    fun abortWriteSession(context: Context, store: BridgeFileStore, targetUri: String, transferId: String?)
     fun importApkSet(
         context: Context,
         paths: List<String>,
@@ -39,13 +39,16 @@ interface FileBridgePort {
     ): String?
     fun completeClonePreparation(context: Context, packageName: String): Boolean
     fun queryPendingClonePreparations(context: Context): List<String>
-    fun queryLatestVisibleImage(context: Context): ProfileMediaEntryDto?
-    fun openImagePicker(context: Context): Boolean
-    fun openLatestForRead(context: Context, store: BridgeFileStore): ReadSessionDto?
-    fun writePerAppShareMarker(context: Context, packageName: String): String
-    fun deletePerAppShareMarker(context: Context, packageName: String): Boolean
     fun runSelfTest(context: Context, marker: ByteArray): SelfTestResultDto?
     fun installCrossProfileForwarding(context: Context, kind: CrossProfileForwardingKind): Boolean
+    fun recordTransfer(context: Context, record: TransferLedgerDto, contentUri: String): Boolean
+    fun inspectTransferredFile(
+        context: Context,
+        contentUri: String,
+        mime: String?,
+        mode: BridgeOpenMode,
+    ): BridgeInspectResult
+    fun queueTransferOpen(context: Context, request: TransferOpenRequestDto): Boolean
 }
 
 interface AppListPort {

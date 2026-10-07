@@ -24,28 +24,26 @@ class ProfileAppPageAccumulator {
 
 enum class BridgeFileStore { Downloads, Media }
 enum class BridgeTransferDirection { ToMain, ToProfile }
-enum class CrossProfileForwardingKind { ImagePicker, ProfileDownloads }
+enum class CrossProfileForwardingKind { ProfileDownloads }
+enum class BridgeTransferRole { Sent, Received }
 
+/**
+ * One transfer-ledger entry as it crosses the bridge. The source side generates [transferId]; both
+ * sides key their ledger rows on it. [sizeBytes] is the number of bytes actually written.
+ */
 @Parcelize
-data class TransferHistoryDto(
+data class TransferLedgerDto(
+    val transferId: String,
     val displayName: String,
-    val displayLocation: String,
-    val isImage: Boolean,
+    val mime: String,
+    val sizeBytes: Long?,
+    val relativePath: String?,
     val direction: BridgeTransferDirection?,
+    val role: BridgeTransferRole,
 ) : Parcelable
 
 @Parcelize
 data class WriteSessionDto(val uri: String, val descriptor: ParcelFileDescriptor) : Parcelable
-
-@Parcelize
-data class ReadSessionDto(
-    val displayName: String,
-    val mimeType: String,
-    val descriptor: ParcelFileDescriptor,
-) : Parcelable
-
-@Parcelize
-data class ProfileMediaEntryDto(val displayName: String, val mimeType: String, val uri: String) : Parcelable
 
 @Parcelize
 data class SelfTestResultDto(val bytes: ByteArray, val location: String) : Parcelable
@@ -97,7 +95,7 @@ data class OpenWriteSession(
 data class FinishWriteSession(
     val store: BridgeFileStore,
     val targetUri: String,
-    val history: TransferHistoryDto? = null,
+    val record: TransferLedgerDto? = null,
 ) : DestinationCommand<String> {
     override val id get() = "file.finish_write_session"
     override fun encodeResult(result: String, out: Bundle) = out.putString(RESULT, result)
@@ -105,7 +103,11 @@ data class FinishWriteSession(
 }
 
 @Parcelize
-data class AbortWriteSession(val store: BridgeFileStore, val targetUri: String) : DestinationCommand<Unit> {
+data class AbortWriteSession(
+    val store: BridgeFileStore,
+    val targetUri: String,
+    val transferId: String? = null,
+) : DestinationCommand<Unit> {
     override val id get() = "file.abort_write_session"
     override fun encodeResult(result: Unit, out: Bundle) = Unit
     override fun decodeResult(src: Bundle) = Unit
@@ -142,41 +144,6 @@ data class CompleteClonePreparation(val packageName: String) : ParentCommand<Boo
 }
 
 @Parcelize
-data object QueryLatestVisibleImage : ProfileCommand<ProfileMediaEntryDto?> {
-    override val id get() = "file.query_latest_visible_image"
-    override fun encodeResult(result: ProfileMediaEntryDto?, out: Bundle) = out.putParcelable(RESULT, result)
-    override fun decodeResult(src: Bundle): ProfileMediaEntryDto? = src.parcelableResult()
-}
-
-@Parcelize
-data object OpenImagePickerInProfile : ProfileCommand<Boolean> {
-    override val id get() = "file.open_image_picker"
-    override fun encodeResult(result: Boolean, out: Bundle) = out.putBoolean(RESULT, result)
-    override fun decodeResult(src: Bundle) = src.getBoolean(RESULT)
-}
-
-@Parcelize
-data class OpenLatestForRead(val store: BridgeFileStore) : ProfileCommand<ReadSessionDto?> {
-    override val id get() = "file.open_latest_for_read"
-    override fun encodeResult(result: ReadSessionDto?, out: Bundle) = out.putParcelable(RESULT, result)
-    override fun decodeResult(src: Bundle): ReadSessionDto? = src.parcelableResult()
-}
-
-@Parcelize
-data class WritePerAppShareMarker(val packageName: String) : ProfileCommand<String> {
-    override val id get() = "file.write_per_app_share_marker"
-    override fun encodeResult(result: String, out: Bundle) = out.putString(RESULT, result)
-    override fun decodeResult(src: Bundle): String = requireNotNull(src.getString(RESULT))
-}
-
-@Parcelize
-data class DeletePerAppShareMarker(val packageName: String) : ProfileCommand<Boolean> {
-    override val id get() = "file.delete_per_app_share_marker"
-    override fun encodeResult(result: Boolean, out: Bundle) = out.putBoolean(RESULT, result)
-    override fun decodeResult(src: Bundle) = src.getBoolean(RESULT)
-}
-
-@Parcelize
 data class RunBridgeSelfTest(val marker: ByteArray) : ProfileCommand<SelfTestResultDto?> {
     override val id get() = "file.run_self_test"
     override fun encodeResult(result: SelfTestResultDto?, out: Bundle) = out.putParcelable(RESULT, result)
@@ -207,13 +174,8 @@ internal val FILE_BRIDGE_COMMAND_SAMPLES: List<BridgeCommand<*>> = listOf(
     ImportApkSet(listOf("/base.apk"), "label", "pkg", "Download/PrismSpace"),
     CompleteClonePreparation("pkg"),
     QueryPendingClonePreparations,
-    QueryLatestVisibleImage,
-    OpenImagePickerInProfile,
-    OpenLatestForRead(BridgeFileStore.Downloads),
-    WritePerAppShareMarker("pkg"),
-    DeletePerAppShareMarker("pkg"),
     RunBridgeSelfTest(byteArrayOf(1)),
-    InstallCrossProfileForwarding(CrossProfileForwardingKind.ImagePicker),
+    InstallCrossProfileForwarding(CrossProfileForwardingKind.ProfileDownloads),
     QueryProfileAppsPage(0),
 )
 

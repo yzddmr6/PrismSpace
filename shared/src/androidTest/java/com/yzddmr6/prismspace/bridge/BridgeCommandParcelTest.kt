@@ -35,7 +35,6 @@ class BridgeCommandParcelTest {
         )
 
         val writePipe = ParcelFileDescriptor.createPipe()
-        val readPipe = ParcelFileDescriptor.createPipe()
         try {
             assertRoundTrip(
                 OpenWriteSession(BridgeFileStore.Downloads, "name", "type", "path"),
@@ -45,26 +44,38 @@ class BridgeCommandParcelTest {
                 FinishWriteSession(
                     BridgeFileStore.Media,
                     "content://write",
-                    TransferHistoryDto("name", "Pictures", true, BridgeTransferDirection.ToProfile),
+                    TransferLedgerDto(
+                        "id",
+                        "name",
+                        "image/png",
+                        3L,
+                        "Pictures/PrismSpace",
+                        BridgeTransferDirection.ToProfile,
+                        BridgeTransferRole.Received,
+                    ),
                 ),
                 "content://write",
             )
-            assertRoundTrip(AbortWriteSession(BridgeFileStore.Media, "content://write"), Unit)
+            assertRoundTrip(AbortWriteSession(BridgeFileStore.Media, "content://write", "id"), Unit)
             assertRoundTrip(
                 ImportApkSet(listOf("/base.apk", "/split.apk"), "Label", "pkg", "Downloads"),
                 "content://apk",
             )
             assertRoundTrip(
-                QueryLatestVisibleImage,
-                ProfileMediaEntryDto("image.jpg", "image/jpeg", "content://image"),
+                RecordTransfer(
+                    TransferLedgerDto("id", "name", "type", null, null, null, BridgeTransferRole.Sent),
+                    "content://target",
+                ),
+                true,
             )
-            assertRoundTrip(OpenImagePickerInProfile, true)
             assertRoundTrip(
-                OpenLatestForRead(BridgeFileStore.Downloads),
-                ReadSessionDto("name", "type", readPipe[0]),
+                InspectTransferredFile("content://target", "type", BridgeOpenMode.File),
+                BridgeInspectResult.NoViewer,
             )
-            assertRoundTrip(WritePerAppShareMarker("pkg"), "content://marker")
-            assertRoundTrip(DeletePerAppShareMarker("pkg"), true)
+            assertRoundTrip(
+                QueueTransferOpen(TransferOpenRequestDto("id", BridgeOpenMode.Folder, null, null, "Pictures/PrismSpace")),
+                true,
+            )
             assertRoundTrip(RunBridgeSelfTest(byteArrayOf(1, 2)), SelfTestResultDto(byteArrayOf(2, 1), "location"))
             assertRoundTrip(
                 InstallCrossProfileForwarding(CrossProfileForwardingKind.ProfileDownloads),
@@ -120,7 +131,6 @@ class BridgeCommandParcelTest {
             assertRoundTrip(CloseDiagnosticsSnapshot(diagnosticToken), Unit)
         } finally {
             writePipe.forEach(ParcelFileDescriptor::close)
-            readPipe.forEach(ParcelFileDescriptor::close)
         }
     }
 
