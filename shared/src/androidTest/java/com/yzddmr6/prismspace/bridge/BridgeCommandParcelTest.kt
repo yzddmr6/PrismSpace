@@ -23,6 +23,18 @@ class BridgeCommandParcelTest {
         assertRoundTrip(EnsureAppFreeToLaunch("pkg"), "reason")
         assertRoundTrip(MarkClonedSystemApp("pkg"), true)
         assertRoundTrip(EnableSystemApp("pkg"), false)
+        assertRoundTrip(
+            QuerySystemAppSelectionPage(0, 50),
+            SystemAppSelectionPage(
+                com.yzddmr6.prismspace.provisioning.SelectionStatus.Pending,
+                listOf(SystemAppSelectionEntry("pkg", null, null, false, true, true, true)),
+                hasMore = false,
+            ),
+        )
+        assertRoundTrip(
+            ApplySystemAppSelection(listOf(SystemAppOverrideChange("pkg", SystemAppChoice.Disabled)), SelectionFinish.Confirm),
+            SystemAppApplyReportDto(listOf("a"), listOf("b"), listOf("c"), emptyList(), emptyList()),
+        )
 
         val writePipe = ParcelFileDescriptor.createPipe()
         val readPipe = ParcelFileDescriptor.createPipe()

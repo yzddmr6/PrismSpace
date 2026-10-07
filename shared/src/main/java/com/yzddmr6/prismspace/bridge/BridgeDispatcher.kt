@@ -3,6 +3,7 @@ package com.yzddmr6.prismspace.bridge
 import android.content.Context
 import android.os.Bundle
 import com.yzddmr6.prismspace.analytics.DiagnosticLog
+import com.yzddmr6.prismspace.provisioning.SystemAppPolicyRuntime
 
 enum class BridgeErrorCategory { HandlerUnavailable, InvalidRequest, ExecutionFailed }
 
@@ -82,6 +83,14 @@ internal object BridgeDispatcher {
             CancelProfileShortcutLaunch -> shortcut(CancelProfileShortcutLaunch) {
                 cancelProfileLaunch(context)
             }
+            is QuerySystemAppSelectionPage -> success(
+                command,
+                SystemAppPolicyRuntime.querySelectionPage(context, command.pageIndex, command.pageSize),
+            )
+            is ApplySystemAppSelection -> success(
+                command,
+                SystemAppPolicyRuntime.applySelection(context, command.changes, command.finish),
+            )
             QueryProfileProvisioningFacts -> success(
                 QueryProfileProvisioningFacts,
                 CoreBridgeOperations.queryProfileProvisioningFacts(context),

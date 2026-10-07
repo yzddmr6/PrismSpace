@@ -12,7 +12,6 @@ import static android.content.Intent.ACTION_SEND;
 import static android.content.Intent.ACTION_SEND_MULTIPLE;
 import static android.content.Intent.ACTION_VIEW;
 import static android.content.Intent.CATEGORY_BROWSABLE;
-import static android.content.Intent.CATEGORY_LAUNCHER;
 import static android.content.Intent.FLAG_ACTIVITY_NEW_TASK;
 import static android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
 import static android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED;
@@ -37,7 +36,6 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
-import android.content.pm.ApplicationInfo;
 import android.content.pm.LauncherApps;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
@@ -45,7 +43,6 @@ import android.os.Bundle;
 import android.os.Process;
 import android.os.UserManager;
 import android.preference.PreferenceManager;
-import android.provider.ContactsContract.Contacts;
 import android.provider.Settings;
 import android.util.Log;
 import android.widget.Toast;
@@ -75,9 +72,7 @@ import com.yzddmr6.prismspace.util.Suppliers;
 import com.yzddmr6.prismspace.util.Toasts;
 import com.yzddmr6.prismspace.util.Users;
 
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.List;
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -99,7 +94,7 @@ public class PrismProvisioning extends IntentService {
 	/** Provision type: 0 (default) - Managed provisioning, 1 - Manual provisioning */
 	private static final String PREF_KEY_PROFILE_PROVISION_TYPE = "profile.provision.type";
 	/** The revision for post-provisioning. Increase this const value if post-provisioning needs to be re-performed after upgrade. */
-	private static final int POST_PROVISION_REV = 11;
+	private static final int POST_PROVISION_REV = 12;
 	/** States below this value describe a fresh or still-running initial provisioning transaction. */
 	private static final int FIRST_COMPLETED_POST_PROVISION_REV = 3;
 	private static final String AFFILIATION_ID = "com.yzddmr6.prismspace";
@@ -182,11 +177,14 @@ public class PrismProvisioning extends IntentService {
 			Analytics.$().report(e);
 		}
 
-		// Disable unnecessarily enabled apps
-		if (! Users.isParentProfile()) hideUnnecessaryAppsInManagedProfile(context);	// Users.isProfile() does not work before setProfileEnabled().
-		// Keep user-facing install and storage system apps as the final invariant. Some ROM provisioning
-		// cleanup can hide launcher-capable system apps after they are installed.
-		enableCriticalAppsIfNeeded(context, policies);
+		// One system app policy for every creation path: it does not depend on the ROM's ManagedProvisioning
+		// lists and keeps critical packages available as the final invariant. It must not block enabling the profile.
+		try {
+			SystemAppPolicyRuntime.converge(context, policies, ConvergeReason.Provision, provisionState);
+		} catch (final RuntimeException e) {
+			DiagnosticLog.INSTANCE.e(TAG, "System app policy convergence failed during provisioning", e);
+			Analytics.$().report(e);
+		}
 
 		setupLauncherActivityInPrism(context);     // Must before setProfileEnabled() is invoked.
 		if (! Users.isParentProfile()) retireConvergeTrampoline(context);
@@ -219,17 +217,6 @@ public class PrismProvisioning extends IntentService {
 		return ! ACTION_PROFILE_PROVISIONING_COMPLETE.equals(action) || state < revision;
 	}
 
-	@ProfileUser private static void hideUnnecessaryAppsInManagedProfile(final Context context) {
-		final List<ResolveInfo> resolves = context.getPackageManager().queryIntentActivities(
-				new Intent(Intent.ACTION_PICK, Contacts.CONTENT_URI), PackageManager.MATCH_SYSTEM_ONLY);	// Do not use resolveActivity(), which will return ResolverActivity.
-		for (final ResolveInfo resolve : resolves) {
-			final String pkg = resolve.activityInfo.packageName;
-			if ((resolve.activityInfo.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) == 0 || "android".equals(pkg)) continue;
-			if (context.getPackageManager().resolveActivity(new Intent(ACTION_MAIN).addCategory(CATEGORY_LAUNCHER).setPackage(pkg), 0) != null)
-				new DevicePolicies(context).setApplicationHiddenWithoutAppOpsSaver(pkg, true);
-		}
-	}
-
 	@WorkerThread public static void performIncrementalProfileOwnerProvisioningIfNeeded(final Context context) {
 		try {
 			final DevicePolicies policies = new DevicePolicies(context);
@@ -245,8 +232,9 @@ public class PrismProvisioning extends IntentService {
 			} else if (state < FIRST_COMPLETED_POST_PROVISION_REV) {
 				Log.i(TAG, "Initial profile provisioning owns state " + state + "; skipping incremental migration.");
 			} else Log.i(TAG, "Post-provision migration already current at " + state);
-			// Availability of installer/DocumentsUI packages is a runtime invariant, not a migration.
-			enableCriticalAppsIfNeeded(context, policies);
+			// System app availability is a runtime invariant, not a migration: the policy keeps critical
+			// packages available on every pass, seeds existing spaces once and only writes changed targets.
+			SystemAppPolicyRuntime.converge(context, policies, ConvergeReason.Incremental, state);
 		} catch (final RuntimeException e) {
 			Analytics.$().logAndReport(TAG, "Error provisioning profile", e);
 		}
@@ -314,41 +302,11 @@ public class PrismProvisioning extends IntentService {
 		}
 	}
 
-	enum CriticalAppStep { Unhide, Unsuspend }
-
-	/** Critical packages must end up enabled, unhidden AND unsuspended. Provisioning cleanup "deletes" by
-	 *  hiding + suspending, so un-hiding alone leaves a half-usable (visible but suspended) package.
-	 *  Enabling always precedes this plan, since it installs the package for this profile when missing. */
-	static List<CriticalAppStep> planCriticalAppConvergence(final boolean hidden, final boolean suspended) {
-		final List<CriticalAppStep> steps = new ArrayList<>(2);
-		if (hidden) steps.add(CriticalAppStep.Unhide);
-		if (suspended) steps.add(CriticalAppStep.Unsuspend);
-		return steps;
-	}
-
-	@ProfileUser private static void enableCriticalAppsIfNeeded(final Context context, final DevicePolicies policies) {
-		final Set<String> pkgs = SystemAppsManager.detectCriticalSystemPackages(context.getPackageManager());
-		for (final String pkg : pkgs) try {
-			policies.enableSystemApp(pkg);
-			final boolean hidden = policies.invoke(DevicePolicyManager::isApplicationHidden, pkg);
-			final boolean suspended = policies.isPackageSuspended(pkg);
-			for (final CriticalAppStep step : planCriticalAppConvergence(hidden, suspended)) switch (step) {
-			case Unhide:
-				policies.invoke(DevicePolicyManager::setApplicationHidden, pkg, false);
-				break;
-			case Unsuspend:
-				final String[] failed = policies.invoke(DevicePolicyManager::setPackagesSuspended, new String[] { pkg }, false);
-				if (failed != null && failed.length > 0) DiagnosticLog.INSTANCE.w(TAG, "Failed to unsuspend critical package " + pkg, null);
-				else DiagnosticLog.INSTANCE.i(TAG, "Unsuspended critical package " + pkg);
-				break;
-			}
-		} catch (final IllegalArgumentException | PackageManager.NameNotFoundException ignored) {}		// Ignore non-existent packages.
-	}
-
 	@OwnerUser @ProfileUser @WorkerThread public static void reprovisionManagedProfile(final Context context) {
 		final DevicePolicies policies = new DevicePolicies(context);
 		final boolean owner = Users.isParentProfile();
 		final SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+		final int stateBeforeRepair = prefs.getInt(PREF_KEY_PROVISION_STATE, 0);
 		if (! owner) {
 			// Always perform all the required provisioning steps covered by stock ManagedProvisioning, in case something is missing there.
 			// This is also required for manual provision via ADB shell.
@@ -360,7 +318,7 @@ public class PrismProvisioning extends IntentService {
 				ProfileOwnerManualProvisioning.start(context, policies);	// Simulate the stock managed profile provision
 			}
 			startProfileOwnerPostProvisioning(context, policies);
-			enableCriticalAppsIfNeeded(context, policies);
+			SystemAppPolicyRuntime.converge(context, policies, ConvergeReason.Repair, stateBeforeRepair);
 			if (! owner) {
 				setupLauncherActivityInPrism(context);
 				retireConvergeTrampoline(context);
