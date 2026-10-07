@@ -62,4 +62,34 @@ class ShareTargetManifestContractTest {
         assertFalse(source.contains("getBooleanExtra"))
         assertTrue(source.contains("vm.startExternal("))
     }
+
+    private fun transferSources(): Map<String, String> {
+        val dir = listOf(
+            File("src/main/java/com/yzddmr6/prismspace/prism/transfer"),
+            File("mobile/src/main/java/com/yzddmr6/prismspace/prism/transfer"),
+        ).first(File::isDirectory)
+        return dir.listFiles().orEmpty().filter { it.extension == "kt" }.associate { it.name to it.readText() }
+    }
+
+    /**
+     * "Continue sharing in the other space" must never launch a third-party app across users: in the
+     * transfer package the only cross-profile start is PrismSpace's own trampoline, and the code that
+     * opens viewers / the share sheet only starts activities in its own user.
+     */
+    @Test fun transferCrossProfileStartsOnlyTargetPrismSpaceItself() {
+        val sources = transferSources()
+        assertEquals(
+            setOf("TransferOpenCoordinator.kt"),
+            sources.filterValues { it.contains("CrossProfileApps::class") }.keys,
+        )
+        val coordinator = sources.getValue("TransferOpenCoordinator.kt")
+        val crossStarts = coordinator.lines().filter { it.contains("apps.startActivity(") }
+        assertEquals(1, crossStarts.size)
+        assertTrue(crossStarts.single().trim().startsWith("apps.startActivity(TransferOpenActivity.intent("))
+        sources.forEach { (name, text) -> assertFalse("$name must not start as another user", text.contains("startActivityAsUser")) }
+
+        val opener = sources.getValue("TransferOpener.kt")
+        assertFalse(opener.contains("startActivityAsUser"))
+        assertFalse(opener.contains("CrossProfileApps"))
+    }
 }
