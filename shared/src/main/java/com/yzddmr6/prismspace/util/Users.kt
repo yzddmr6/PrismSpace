@@ -16,6 +16,7 @@ import android.os.UserManager
 import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.core.content.getSystemService
+import com.yzddmr6.prismspace.analytics.DiagnosticLog
 import com.yzddmr6.prismspace.analytics.analytics
 import com.yzddmr6.prismspace.home.HomeRole
 import com.yzddmr6.prismspace.util.PseudoContentProvider
@@ -144,6 +145,31 @@ class Users : PseudoContentProvider() {
 
 			fun isProfileAvailable(context: Context, user: UserHandle): Boolean =
 				isProfileRunning(context, user) && ! isProfileQuietModeEnabled(context, user)
+
+		/**
+		 * Read-only: is there a vendor CLONE profile (e.g. XSpace) in this profile group? Callable from
+		 * both spaces; blocking binder calls, so call off the main thread. Kept out of [refreshUsers] and
+		 * space classification on purpose: it only drives an explanatory notice.
+		 */
+		@JvmStatic fun vendorCloneProfilePresence(context: Context): CloneProfilePresence {
+			if (SDK_INT < VANILLA_ICE_CREAM) return VendorCloneProfiles.presence(SDK_INT, emptyList())
+				.also { logClonePresence(it, 0, 0) }
+			val profiles = runCatching { context.getSystemService<UserManager>()!!.userProfiles.orEmpty() }.getOrDefault(emptyList())
+			val launcherApps = context.getSystemService<LauncherApps>()
+			val types = profiles.map { profile -> runCatching { launcherApps?.getLauncherUserInfo(profile)?.userType }.getOrNull() }
+			return VendorCloneProfiles.presence(SDK_INT, types)
+				.also { logClonePresence(it, profiles.size, types.count { type -> type == null }) }
+		}
+
+		@Volatile private var lastClonePresenceLog: String? = null
+
+		/** Logged only when the value changes within this process. */
+		private fun logClonePresence(presence: CloneProfilePresence, profiles: Int, unreadable: Int) {
+			val line = "clone_profile presence=$presence sdk=$SDK_INT profiles=$profiles unreadable=$unreadable"
+			if (line == lastClonePresenceLog) return
+			lastClonePresenceLog = line
+			DiagnosticLog.i(TAG, line)
+		}
 
 		@JvmStatic fun isSystemUser() = CURRENT_ID == 0
 		@JvmStatic fun isParentProfile() = CURRENT_ID == parentProfile.toId()

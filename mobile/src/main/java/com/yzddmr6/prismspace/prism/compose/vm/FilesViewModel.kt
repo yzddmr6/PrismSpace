@@ -7,6 +7,8 @@ import com.yzddmr6.prismspace.prism.compose.space.SpaceUsability
 import com.yzddmr6.prismspace.prism.transfer.TransferLedger
 import com.yzddmr6.prismspace.prism.transfer.TransferLedgerRecord
 import com.yzddmr6.prismspace.prism.transfer.currentDualUsability
+import com.yzddmr6.prismspace.util.CloneProfilePresence
+import com.yzddmr6.prismspace.util.Users
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,11 +33,18 @@ class FilesViewModel(app: Application) : AndroidViewModel(app) {
     private val _history = MutableStateFlow<List<TransferLedgerRecord>>(emptyList())
     val history: StateFlow<List<TransferLedgerRecord>> = _history
 
+    private val _vendorCloneNotice = MutableStateFlow(false)
+    /** True only when a vendor CLONE profile (system-level dual apps) is positively identified. */
+    val vendorCloneNotice: StateFlow<Boolean> = _vendorCloneNotice
+
     init { refresh() }
 
     fun refresh() {
         viewModelScope.launch {
             _history.value = withContext(Dispatchers.IO) { TransferLedger.load(getApplication()) }
+            _vendorCloneNotice.value = withContext(Dispatchers.IO) {
+                Users.vendorCloneProfilePresence(getApplication()) == CloneProfilePresence.Present
+            }
         }
     }
 

@@ -74,6 +74,7 @@ fun FilesScreen() {
     val context = LocalContext.current
     val activity = context as? Activity
     val history by vm.history.collectAsState()
+    val vendorCloneNotice by vm.vendorCloneNotice.collectAsState()
     val transferVm: TransferSheetViewModel = viewModel()
     var showReturnGuide by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -188,6 +189,15 @@ fun FilesScreen() {
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.rotate(if (showReturnGuide) 90f else 0f),
+                        )
+                    }
+                    // Always visible (outside the collapsed part): the notice must not hide behind a tap.
+                    if (vendorCloneNotice) {
+                        Text(
+                            text = stringResource(R.string.lz_xfer_clone_notice),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = PrismSpacing.Lg, end = PrismSpacing.Lg, bottom = PrismSpacing.Md),
                         )
                     }
                     if (showReturnGuide) {
