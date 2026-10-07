@@ -118,7 +118,9 @@ internal object TransferOpener {
             DocumentsContract.Document.MIME_TYPE_DIR,
         )
         .addCategory(Intent.CATEGORY_DEFAULT)
-        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        // CLEAR_TASK: an already running DocumentsUI task would otherwise just come to the front at
+        // whatever folder it last showed (observed on HyperOS 3 / Android 16), not at this one.
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
 
     private fun viewIntent(context: Context, uri: Uri, mime: String?): Intent {
         val type = mime?.takeIf { it.isNotBlank() }

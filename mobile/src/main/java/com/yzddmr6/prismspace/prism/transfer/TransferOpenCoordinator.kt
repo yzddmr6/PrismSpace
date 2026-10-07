@@ -11,6 +11,7 @@ import com.yzddmr6.prismspace.bridge.InspectTransferredFile
 import com.yzddmr6.prismspace.bridge.QueueTransferOpen
 import com.yzddmr6.prismspace.mobile.R
 import com.yzddmr6.prismspace.prism.compose.space.SpaceRepositoryProvider
+import com.yzddmr6.prismspace.prism.compose.space.SpaceStateRepository
 import com.yzddmr6.prismspace.prism.compose.space.SpaceUsability
 import com.yzddmr6.prismspace.prism.compose.vm.GateAction
 import com.yzddmr6.prismspace.prism.compose.vm.fileTransferGate
@@ -37,9 +38,14 @@ internal sealed interface OpenOutcome {
     data class Failed(val message: String) : OpenOutcome
 }
 
+private const val STATE_COLLECTION_TIMEOUT_MS = 4_000L
+
 /** Fresh dual-space usability, the same source as clone launch. Main space only (`@OwnerUser`). */
 @WorkerThread
 internal fun currentDualUsability(context: Context): SpaceUsability {
+    // Collect fresh facts: a cold process (the share receiver) has none yet, and a warm one may hold
+    // a stale "healthy" snapshot after the user paused work apps (both observed on device).
+    SpaceStateRepository(context.applicationContext).refreshBlocking("transfer_gate", STATE_COLLECTION_TIMEOUT_MS)
     val repo = SpaceRepositoryProvider.get(context.applicationContext)
     return repo.dualSpace()?.let { repo.usabilityOf(it) } ?: SpaceUsability.NotProvisioned
 }

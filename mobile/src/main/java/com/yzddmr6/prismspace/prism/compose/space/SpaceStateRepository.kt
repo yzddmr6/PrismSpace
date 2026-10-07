@@ -88,6 +88,11 @@ class SpaceStateRepository(context: Context) {
         withTimeoutOrNull(timeoutMs) { store.refreshAndRead("initial_route") }
     }
 
+    /** Fresh facts for a gate decision; null when collection failed or timed out. Worker thread only. */
+    fun refreshBlocking(reason: String, timeoutMs: Long): SpaceState? = runBlocking {
+        withTimeoutOrNull(timeoutMs) { store.refreshAndRead(reason) }
+    }
+
     /** Non-blocking adapter for legacy repository APIs. */
     fun currentState(): SpaceState? = (state.value as? SpaceSnapshot.Loaded)?.state
 
