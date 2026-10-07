@@ -33,21 +33,12 @@ class TransferOpenActivity : ComponentActivity() {
         }
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) { TransferOpener.openLocal(this@TransferOpenActivity, request) }
-            DiagnosticLog.i(TAG, "open.trampoline id=${request.recordId} result=$result")
-            val message = when (result) {
-                OpenSurfaceResult.Opened -> null
-                OpenSurfaceResult.Missing -> getString(R.string.lz_xfer_open_missing)
-                OpenSurfaceResult.NoViewer -> getString(R.string.lz_xfer_open_no_viewer)
-                OpenSurfaceResult.Failed -> getString(R.string.lz_xfer_open_failed, getString(currentSpaceName()))
-            }
-            message?.let { Toast.makeText(this@TransferOpenActivity, it, Toast.LENGTH_LONG).show() }
+            DiagnosticLog.i(TAG, "open.trampoline id=${request.recordId} mode=${request.mode} result=$result")
+            surfaceMessage(this@TransferOpenActivity, request.mode, result)
+                ?.let { Toast.makeText(this@TransferOpenActivity, it, Toast.LENGTH_LONG).show() }
             finish()
         }
     }
-
-    private fun currentSpaceName(): Int =
-        if (runCatching { Users.isParentProfile() }.getOrDefault(true)) R.string.lz_xfer_space_main
-        else R.string.lz_xfer_space_dual
 
     internal companion object {
         private const val TAG = "Prism.TransferOpen"
@@ -56,8 +47,10 @@ class TransferOpenActivity : ComponentActivity() {
         private const val EXTRA_URI = "com.yzddmr6.prismspace.extra.TRANSFER_URI"
         private const val EXTRA_MIME = "com.yzddmr6.prismspace.extra.TRANSFER_MIME"
         private const val EXTRA_REL = "com.yzddmr6.prismspace.extra.TRANSFER_RELATIVE_PATH"
+        private const val EXTRA_SHARE_URIS = "com.yzddmr6.prismspace.extra.TRANSFER_SHARE_URIS"
+        private const val EXTRA_SHARE_MIMES = "com.yzddmr6.prismspace.extra.TRANSFER_SHARE_MIMES"
 
-        /** Plain string extras only: the intent crosses users through the system. */
+        /** Plain string extras only: the intent crosses users through the system. A null share mime is "". */
         fun intent(context: Context, request: TransferOpenRequest): Intent =
             Intent(context, TransferOpenActivity::class.java)
                 .putExtra(EXTRA_RECORD_ID, request.recordId)
@@ -65,18 +58,51 @@ class TransferOpenActivity : ComponentActivity() {
                 .putExtra(EXTRA_URI, request.contentUri)
                 .putExtra(EXTRA_MIME, request.mime)
                 .putExtra(EXTRA_REL, request.relativePath)
+                .apply {
+                    if (request.shareItems.isNotEmpty()) {
+                        putStringArrayListExtra(EXTRA_SHARE_URIS, ArrayList(request.shareItems.map { it.contentUri }))
+                        putStringArrayListExtra(EXTRA_SHARE_MIMES, ArrayList(request.shareItems.map { it.mime.orEmpty() }))
+                    }
+                }
 
+        /** Null (treated as "missing request") when a Share request lacks items or its lists disagree. */
         fun readRequest(intent: Intent?): TransferOpenRequest? {
             val id = intent?.getStringExtra(EXTRA_RECORD_ID) ?: return null
             val mode = intent.getStringExtra(EXTRA_MODE)?.let { name -> OpenMode.entries.firstOrNull { it.name == name } }
                 ?: return null
+            val shareItems = if (mode == OpenMode.Share) {
+                TransferOpenPlanner.shareItemsOf(intent.getStringArrayListExtra(EXTRA_SHARE_URIS), intent.getStringArrayListExtra(EXTRA_SHARE_MIMES))
+                    ?: return null
+            } else {
+                emptyList()
+            }
             return TransferOpenRequest(
                 id,
                 mode,
                 intent.getStringExtra(EXTRA_URI),
                 intent.getStringExtra(EXTRA_MIME),
                 intent.getStringExtra(EXTRA_REL),
+                shareItems,
             )
         }
+
+        /** What the owning user tells the user when the surface did not open; null when it did. */
+        internal fun surfaceMessage(context: Context, mode: OpenMode, result: OpenSurfaceResult): String? {
+            val strings = PrismLocale.wrap(context)
+            val space = strings.getString(currentSpaceName())
+            return when (result) {
+                OpenSurfaceResult.Opened -> null
+                OpenSurfaceResult.Missing ->
+                    strings.getString(if (mode == OpenMode.Share) R.string.lz_xfer_share_missing else R.string.lz_xfer_open_missing)
+                OpenSurfaceResult.NoViewer ->
+                    strings.getString(if (mode == OpenMode.Share) R.string.lz_xfer_share_no_target else R.string.lz_xfer_open_no_viewer)
+                OpenSurfaceResult.Failed ->
+                    strings.getString(if (mode == OpenMode.Share) R.string.lz_xfer_share_failed else R.string.lz_xfer_open_failed, space)
+            }
+        }
+
+        private fun currentSpaceName(): Int =
+            if (runCatching { Users.isParentProfile() }.getOrDefault(true)) R.string.lz_xfer_space_main
+            else R.string.lz_xfer_space_dual
     }
 }

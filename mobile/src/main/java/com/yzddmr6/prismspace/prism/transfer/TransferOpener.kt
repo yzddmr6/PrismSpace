@@ -1,5 +1,6 @@
 package com.yzddmr6.prismspace.prism.transfer
 
+import android.content.ClipData
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -14,8 +15,12 @@ import com.yzddmr6.prismspace.mobile.R
 import com.yzddmr6.prismspace.prism.service.SystemFileManagerLaunchPlanner
 import com.yzddmr6.prismspace.prism.service.prepareDownloadsViewerUsable
 import com.yzddmr6.prismspace.util.PrismLocale
+import com.yzddmr6.prismspace.util.Users
 
 internal enum class OpenSurfaceResult { Opened, Missing, NoViewer, Failed }
+
+/** [dropped]: items that vanished between the caller's pre-check and this user's own re-check. */
+internal data class LocalShareResult(val result: OpenSurfaceResult, val dropped: Int)
 
 /**
  * Opens a transferred file or its folder in THIS user (the one that owns the MediaStore row).
@@ -48,6 +53,64 @@ internal object TransferOpener {
         }
         OpenMode.File -> request.contentUri?.let { openFile(context, Uri.parse(it), request.mime) }
             ?: OpenSurfaceResult.Failed.also { logSurface(request.mode, "failed", null) }
+        OpenMode.Share -> shareLocal(context, request.shareItems).result
+    }
+
+    /**
+     * Starts the system share sheet in THIS user over files PrismSpace published here. Only the
+     * system chooser is started (by PrismSpace, in this user): the target app is picked by the user
+     * inside this user, so no cross-user launch of a third-party app happens. The cross-profile
+     * forwarder and PrismSpace's own share receiver are excluded from the chooser.
+     */
+    fun shareLocal(context: Context, items: List<ShareItem>): LocalShareResult {
+        // Re-check here: a file may have been deleted after the caller's pre-check. Unknown counts as present.
+        val present = items.filter { presence(context, Uri.parse(it.contentUri)) != Presence.Missing }
+        val dropped = items.size - present.size
+        if (present.isEmpty()) {
+            logSurface(OpenMode.Share, "missing", null)
+            return LocalShareResult(OpenSurfaceResult.Missing, dropped)
+        }
+        val uris = present.map { Uri.parse(it.contentUri) }
+        val mimes = present.mapIndexed { index, item -> resolveMime(context, uris[index], item.mime) }
+        val action = if (present.size == 1) Intent.ACTION_SEND else Intent.ACTION_SEND_MULTIPLE
+        val probe = Intent(action).setType(TransferOpenPlanner.shareMimeType(mimes))
+        val handlers = queryHandlers(context, probe)
+        val self = handlers.filter { it.packageName == context.packageName }
+        return when (val plan = TransferOpenPlanner.planShareIntent(present, mimes, handlers, self)) {
+            SharePlan.NoItems -> LocalShareResult(OpenSurfaceResult.Missing, dropped)
+                .also { logSurface(OpenMode.Share, "missing", null) }
+            SharePlan.NoTarget -> LocalShareResult(OpenSurfaceResult.NoViewer, dropped).also {
+                DiagnosticLog.i(TAG, "xfer.share.intent action=${action.shareActionName()} items=${present.size} handlers=${handlers.size} result=no_target")
+                logSurface(OpenMode.Share, "no_target", null)
+            }
+            is SharePlan.Ready -> {
+                DiagnosticLog.i(
+                    TAG,
+                    "xfer.share.intent action=${plan.action.shareActionName()} items=${plan.uris.size} type=${plan.type} " +
+                        "excluded=${plan.excluded.size} selfExcluded=${self.isNotEmpty()} localDropped=$dropped",
+                )
+                val target = Intent(plan.action).setType(plan.type)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                if (uris.size == 1) target.putExtra(Intent.EXTRA_STREAM, uris.single())
+                else target.putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+                // ClipData carries the read grant; createChooser moves it (and the grant flag) to the chooser.
+                target.clipData = ClipData.newRawUri("", uris.first()).apply {
+                    uris.drop(1).forEach { addItem(ClipData.Item(it)) }
+                }
+                val strings = PrismLocale.wrap(context)
+                val title = strings.getString(R.string.lz_xfer_share_chooser_title, strings.getString(currentSpaceNameRes()))
+                val chooser = Intent.createChooser(target, title)
+                    .putExtra(Intent.EXTRA_EXCLUDE_COMPONENTS, plan.excluded.map { it.toComponent() }.toTypedArray())
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (start(context, chooser)) {
+                    logSurface(OpenMode.Share, "share_chooser", null)
+                    LocalShareResult(OpenSurfaceResult.Opened, dropped)
+                } else {
+                    logSurface(OpenMode.Share, "failed", null)
+                    LocalShareResult(OpenSurfaceResult.Failed, dropped)
+                }
+            }
+        }
     }
 
     /**
@@ -122,10 +185,19 @@ internal object TransferOpener {
         // whatever folder it last showed (observed on HyperOS 3 / Android 16), not at this one.
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
 
-    private fun viewIntent(context: Context, uri: Uri, mime: String?): Intent {
-        val type = mime?.takeIf { it.isNotBlank() }
+    private fun resolveMime(context: Context, uri: Uri, mime: String?): String =
+        mime?.takeIf { it.isNotBlank() }
             ?: runCatching { context.contentResolver.getType(uri) }.getOrNull()
             ?: "application/octet-stream"
+
+    private fun currentSpaceNameRes(): Int =
+        if (runCatching { Users.isParentProfile() }.getOrDefault(true)) R.string.lz_xfer_space_main
+        else R.string.lz_xfer_space_dual
+
+    private fun String.shareActionName() = if (this == Intent.ACTION_SEND_MULTIPLE) "SEND_MULTIPLE" else "SEND"
+
+    private fun viewIntent(context: Context, uri: Uri, mime: String?): Intent {
+        val type = resolveMime(context, uri, mime)
         return Intent(Intent.ACTION_VIEW)
             .setDataAndType(uri, type)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)

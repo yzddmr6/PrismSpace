@@ -43,11 +43,12 @@ fun continueInstallGate(usability: SpaceUsability, res: StringResolver): SpaceAc
 }
 
 /** Which file-transfer entry is gated; the guidance names the action the user attempted. */
-enum class GateAction { Send, Open }
+enum class GateAction { Send, Open, Share }
 
 /**
  * Gate for file-transfer entries that need the dual space: the Files page send card / share confirm
- * ([GateAction.Send]) and opening a file that lives in the dual space ([GateAction.Open]).
+ * ([GateAction.Send]), opening a file that lives in the dual space ([GateAction.Open]) and continuing
+ * to share files from the dual space ([GateAction.Share]).
  */
 fun fileTransferGate(
     usability: SpaceUsability,
@@ -69,6 +70,13 @@ fun fileTransferGate(
             SpaceUsability.BridgeNotReady -> R.string.lz_files_open_gate_bridge
             SpaceUsability.NotProvisioned -> R.string.lz_files_open_gate_missing
             else -> R.string.lz_files_open_gate_unknown
+        }
+        GateAction.Share -> when (usability) {
+            SpaceUsability.Suspended -> R.string.lz_xfer_share_gate_suspended
+            SpaceUsability.LockedNeedsUnlock -> R.string.lz_xfer_share_gate_locked
+            SpaceUsability.BridgeNotReady -> R.string.lz_xfer_share_gate_bridge
+            SpaceUsability.NotProvisioned -> R.string.lz_xfer_share_gate_missing
+            else -> R.string.lz_xfer_share_gate_unknown
         }
     }
     return SpaceActionGate(false, res(id, emptyArray()))

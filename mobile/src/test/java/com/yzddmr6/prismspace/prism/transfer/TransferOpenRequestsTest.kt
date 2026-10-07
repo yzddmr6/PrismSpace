@@ -49,4 +49,50 @@ class TransferOpenRequestsTest {
 
         assertTrue(queue.take() is TakenRequest.Expired)
     }
+
+    private val share = TransferOpenRequest(
+        "batch-1",
+        OpenMode.Share,
+        null,
+        null,
+        null,
+        listOf(ShareItem("content://media/external/images/media/7", "image/png"), ShareItem("content://media/external/downloads/8", null)),
+    )
+
+    @Test fun shareRequestWithAnUnknownMimeSurvivesTheSlot() {
+        queue.put(share)
+        now += 200L
+
+        assertEquals(TakenRequest.Fresh(share, 200L), queue.take())
+    }
+
+    @Test fun shareListsOfUnequalLengthOrEmptyAreExpired() {
+        queue.put(share)
+        slot.fields = slot.fields!!.toMutableMap().apply { put("share_mimes", "image/png") }
+        assertTrue(queue.take() is TakenRequest.Expired)
+
+        queue.put(share)
+        slot.fields = slot.fields!!.toMutableMap().apply { remove("share_uris"); remove("share_mimes") }
+        val taken = queue.take()
+        assertTrue(taken is TakenRequest.Expired)
+        assertEquals("batch-1", (taken as TakenRequest.Expired).recordId)
+
+        queue.put(share.copy(shareItems = emptyList()))
+        assertTrue(queue.take() is TakenRequest.Expired)
+    }
+
+    @Test fun shareRequestReplacesAPendingFolderRequest() {
+        val folder = request.copy(recordId = "r0", mode = OpenMode.Folder)
+        queue.put(folder)
+        queue.put(share)
+
+        assertEquals(TakenRequest.Fresh(share, 0L), queue.take())
+        assertEquals(TakenRequest.Empty, queue.take())
+    }
+
+    @Test fun otherModesCarryNoShareItems() {
+        queue.put(request)
+
+        assertEquals(emptyList<ShareItem>(), (queue.take() as TakenRequest.Fresh).request.shareItems)
+    }
 }

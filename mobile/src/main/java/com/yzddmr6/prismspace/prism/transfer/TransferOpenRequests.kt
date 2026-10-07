@@ -2,6 +2,7 @@ package com.yzddmr6.prismspace.prism.transfer
 
 import android.app.Activity
 import android.content.Context
+import android.widget.Toast
 import com.yzddmr6.prismspace.analytics.DiagnosticLog
 
 /** Storage for the single pending-request slot; the Android version is a dedicated SharedPreferences file. */
@@ -30,6 +31,9 @@ internal class TransferOpenRequestQueue(
                 KEY_URI to request.contentUri,
                 KEY_MIME to request.mime,
                 KEY_REL to request.relativePath,
+                // Share lists are joined with the unit separator, which never occurs in a MediaStore URI or mime.
+                KEY_SHARE_URIS to request.shareItems.takeIf { it.isNotEmpty() }?.joinToString(SEP) { it.contentUri },
+                KEY_SHARE_MIMES to request.shareItems.takeIf { it.isNotEmpty() }?.joinToString(SEP) { it.mime.orEmpty() },
                 KEY_AT to now().toString(),
             ),
         )
@@ -43,8 +47,16 @@ internal class TransferOpenRequestQueue(
         val mode = fields[KEY_MODE]?.let { name -> OpenMode.entries.firstOrNull { it.name == name } }
         val age = at?.let { now() - it } ?: Long.MAX_VALUE
         if (recordId == null || mode == null || age < 0 || age > ttlMs) return TakenRequest.Expired(recordId, age)
+        val shareItems = if (mode == OpenMode.Share) {
+            TransferOpenPlanner.shareItemsOf(
+                fields[KEY_SHARE_URIS]?.split(SEP),
+                fields[KEY_SHARE_MIMES]?.split(SEP),
+            ) ?: return TakenRequest.Expired(recordId, age)
+        } else {
+            emptyList()
+        }
         return TakenRequest.Fresh(
-            TransferOpenRequest(recordId, mode, fields[KEY_URI], fields[KEY_MIME], fields[KEY_REL]),
+            TransferOpenRequest(recordId, mode, fields[KEY_URI], fields[KEY_MIME], fields[KEY_REL], shareItems),
             age,
         )
     }
@@ -57,7 +69,10 @@ internal class TransferOpenRequestQueue(
         private const val KEY_MIME = "mime"
         private const val KEY_REL = "rel"
         private const val KEY_AT = "at"
-        val KEYS = listOf(KEY_ID, KEY_MODE, KEY_URI, KEY_MIME, KEY_REL, KEY_AT)
+        private const val KEY_SHARE_URIS = "share_uris"
+        private const val KEY_SHARE_MIMES = "share_mimes"
+        private const val SEP = "\u001F"
+        val KEYS = listOf(KEY_ID, KEY_MODE, KEY_URI, KEY_MIME, KEY_REL, KEY_SHARE_URIS, KEY_SHARE_MIMES, KEY_AT)
     }
 }
 
@@ -73,10 +88,13 @@ object TransferOpenRequests {
 
     internal fun queue(context: Context, request: TransferOpenRequest) {
         synchronized(lock) { queueOf(context).put(request) }
-        DiagnosticLog.i(TAG, "open.pending queued id=${request.recordId} mode=${request.mode}")
+        DiagnosticLog.i(TAG, "open.pending queued id=${request.recordId} mode=${request.mode} items=${request.shareItems.size}")
     }
 
-    /** Consumes a fresh pending request, if any, and opens it from this foreground [activity]. */
+    /**
+     * Consumes a fresh pending request, if any, and opens it from this foreground [activity]. A surface
+     * that did not open is reported with a toast here, in the owning user (it used to fail silently).
+     */
     @JvmStatic
     fun drain(activity: Activity) {
         val appContext = activity.applicationContext
@@ -87,8 +105,19 @@ object TransferOpenRequests {
                 is TakenRequest.Expired ->
                     DiagnosticLog.w(TAG, "open.pending expired id=${taken.recordId ?: "-"} ageMs=${taken.ageMs}")
                 is TakenRequest.Fresh -> {
-                    DiagnosticLog.i(TAG, "open.pending drained id=${taken.request.recordId} ageMs=${taken.ageMs}")
-                    TransferOpener.openLocal(activity, taken.request)
+                    val request = taken.request
+                    DiagnosticLog.i(
+                        TAG,
+                        "open.pending drained id=${request.recordId} mode=${request.mode} items=${request.shareItems.size} ageMs=${taken.ageMs}",
+                    )
+                    val result = TransferOpener.openLocal(activity, request)
+                    if (result != OpenSurfaceResult.Opened) {
+                        DiagnosticLog.w(TAG, "open.pending result id=${request.recordId} mode=${request.mode} result=$result")
+                        val message = TransferOpenActivity.surfaceMessage(activity, request.mode, result)
+                        if (message != null) {
+                            activity.runOnUiThread { Toast.makeText(appContext, message, Toast.LENGTH_LONG).show() }
+                        }
+                    }
                 }
             }
         }, "Prism-transfer-open-drain").start()
