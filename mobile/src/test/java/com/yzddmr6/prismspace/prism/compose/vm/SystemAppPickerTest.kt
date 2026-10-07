@@ -97,6 +97,7 @@ class SystemAppPickerTest {
             MainLauncherApp("com.android.camera", "相机", ApplicationInfo.FLAG_SYSTEM, "/product/priv-app/MiuiCamera/MiuiCamera.apk", null, true),
             MainLauncherApp("com.miui.gallery", "相册", 0, "/data/app/MIUIGallery/base.apk", null, installedInDual = false),
             MainLauncherApp("com.android.calendar", "日历", 0, "/data/app/MIUICalendar/base.apk", null, installedInDual = true),
+            MainLauncherApp("com.android.providers.downloads.ui", "下载管理", 0, "/data/app/DownloadProviderUi/base.apk", null, false),
             MainLauncherApp("mark.via", "Via", 0, "/data/app/~~a/mark.via-b/base.apk", null, installedInDual = false),
             MainLauncherApp("com.yzddmr6.prismspace", "PrismSpace", 0, "/data/app/~~c/com.yzddmr6.prismspace-d/base.apk", null, false),
         )
@@ -105,6 +106,9 @@ class SystemAppPickerTest {
                 installed = true, hasLauncherEntry = true),
             SystemAppSelectionEntry("com.android.camera", null, SystemAppTarget.Unavailable, critical = false, inDefault = true,
                 installed = true, hasLauncherEntry = true),
+            // Critical, though HyperOS ships it as a /data/app preinstall: never offered in either group.
+            SystemAppSelectionEntry("com.android.providers.downloads.ui", null, SystemAppTarget.Available, critical = true,
+                inDefault = false, installed = false, hasLauncherEntry = false),
         )
         val (system, preinstalled) = pickerGroups(main, entries, selfPackage = "com.yzddmr6.prismspace")
         assertEquals(listOf("com.android.camera"), system.map { it.pkg })

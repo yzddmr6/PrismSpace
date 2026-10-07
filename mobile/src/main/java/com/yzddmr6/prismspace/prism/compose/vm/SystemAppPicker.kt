@@ -58,9 +58,9 @@ fun pickerGroups(
     val system = ArrayList<SystemAppCandidate>()
     val preinstalled = ArrayList<PreinstalledCandidate>()
     mainApps.filter { it.pkg != selfPackage }.distinctBy { it.pkg }.forEach { app ->
+        val entry = byPkg[app.pkg]
+        if (entry?.critical == true) return@forEach
         if (app.flags and ApplicationInfo.FLAG_SYSTEM != 0) {
-            val entry = byPkg[app.pkg]
-            if (entry?.critical == true) return@forEach
             system += SystemAppCandidate(app.pkg, app.label, entry?.inDefault ?: (app.pkg in SystemAppDefaults.packages), entry?.target)
         } else if (!app.installedInDual && isOemDataAppPreinstall(app.flags, app.sourceDir, app.pkg, app.installer)) {
             preinstalled += PreinstalledCandidate(app.pkg, app.label)

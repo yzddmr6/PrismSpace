@@ -117,7 +117,10 @@ internal class SystemAppPolicyEngine(
             collected.facts.filter { it.isSystem && it.hasLauncherEntry }.mapTo(this) { it.pkg }
             addAll(state.overrides.keys)
             addAll(SystemAppDefaults.packages)
-        }.filter { factsByPkg[it]?.isSystem != false }
+            // Critical packages are always listed (flagged) so the main space never offers them,
+            // including OEM ones shipped outside the system image (e.g. HyperOS DownloadProviderUi).
+            addAll(collected.critical)
+        }.filter { it in collected.critical || factsByPkg[it]?.isSystem != false }
         val size = clampProfileAppPageSize(pageSize)
         val start = pageIndex.coerceAtLeast(0).toLong() * size
         if (start >= pkgs.size) return SystemAppSelectionPage(state.status, emptyList(), false)

@@ -201,6 +201,7 @@ class SystemAppPolicyRuntimeTest {
         assertEquals(SelectionStatus.Pending, page.status)
         val byPkg = page.entries.associateBy { it.pkg }
         assertTrue(byPkg.getValue(SETTINGS).critical)
+        assertTrue(byPkg.getValue(GMS).critical)     // Critical packages are always flagged, launcher or not.
         assertTrue(byPkg.getValue(CAMERA).inDefault)
         assertFalse(byPkg.getValue(MMS).inDefault)
         assertFalse(PROVIDER in byPkg)
