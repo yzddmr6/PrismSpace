@@ -75,6 +75,7 @@ import com.yzddmr6.prismspace.util.Suppliers;
 import com.yzddmr6.prismspace.util.Toasts;
 import com.yzddmr6.prismspace.util.Users;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
@@ -98,7 +99,7 @@ public class PrismProvisioning extends IntentService {
 	/** Provision type: 0 (default) - Managed provisioning, 1 - Manual provisioning */
 	private static final String PREF_KEY_PROFILE_PROVISION_TYPE = "profile.provision.type";
 	/** The revision for post-provisioning. Increase this const value if post-provisioning needs to be re-performed after upgrade. */
-	private static final int POST_PROVISION_REV = 10;
+	private static final int POST_PROVISION_REV = 11;
 	/** States below this value describe a fresh or still-running initial provisioning transaction. */
 	private static final int FIRST_COMPLETED_POST_PROVISION_REV = 3;
 	private static final String AFFILIATION_ID = "com.yzddmr6.prismspace";
@@ -235,7 +236,10 @@ public class PrismProvisioning extends IntentService {
 			final SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
 			final int state = prefs.getInt(PREF_KEY_PROVISION_STATE, 0);
 			if (shouldRunOneTimePostProvisionMigration(state, POST_PROVISION_REV)) {
-				Log.i(TAG, "Running post-provision migration " + state + " -> " + POST_PROVISION_REV);
+				DiagnosticLog.INSTANCE.i(TAG, "Running post-provision migration " + state + " -> " + POST_PROVISION_REV);
+				// Older revisions registered cross-profile filters with swapped directions. DPM can only add
+				// filters, so drop every filter owned by us before re-installing the corrected set.
+				policies.execute(DevicePolicyManager::clearCrossProfileIntentFilters);
 				startProfileOwnerPostProvisioning(context, policies);
 				prefs.edit().putInt(PREF_KEY_PROVISION_STATE, POST_PROVISION_REV).commit();
 			} else if (state < FIRST_COMPLETED_POST_PROVISION_REV) {
@@ -310,12 +314,35 @@ public class PrismProvisioning extends IntentService {
 		}
 	}
 
+	enum CriticalAppStep { Unhide, Unsuspend }
+
+	/** Critical packages must end up enabled, unhidden AND unsuspended. Provisioning cleanup "deletes" by
+	 *  hiding + suspending, so un-hiding alone leaves a half-usable (visible but suspended) package.
+	 *  Enabling always precedes this plan, since it installs the package for this profile when missing. */
+	static List<CriticalAppStep> planCriticalAppConvergence(final boolean hidden, final boolean suspended) {
+		final List<CriticalAppStep> steps = new ArrayList<>(2);
+		if (hidden) steps.add(CriticalAppStep.Unhide);
+		if (suspended) steps.add(CriticalAppStep.Unsuspend);
+		return steps;
+	}
+
 	@ProfileUser private static void enableCriticalAppsIfNeeded(final Context context, final DevicePolicies policies) {
 		final Set<String> pkgs = SystemAppsManager.detectCriticalSystemPackages(context.getPackageManager());
 		for (final String pkg : pkgs) try {
-				policies.enableSystemApp(pkg);
-			policies.invoke(DevicePolicyManager::setApplicationHidden, pkg, false);
-		} catch (final IllegalArgumentException ignored) {}		// Ignore non-existent packages.
+			policies.enableSystemApp(pkg);
+			final boolean hidden = policies.invoke(DevicePolicyManager::isApplicationHidden, pkg);
+			final boolean suspended = policies.isPackageSuspended(pkg);
+			for (final CriticalAppStep step : planCriticalAppConvergence(hidden, suspended)) switch (step) {
+			case Unhide:
+				policies.invoke(DevicePolicyManager::setApplicationHidden, pkg, false);
+				break;
+			case Unsuspend:
+				final String[] failed = policies.invoke(DevicePolicyManager::setPackagesSuspended, new String[] { pkg }, false);
+				if (failed != null && failed.length > 0) DiagnosticLog.INSTANCE.w(TAG, "Failed to unsuspend critical package " + pkg, null);
+				else DiagnosticLog.INSTANCE.i(TAG, "Unsuspended critical package " + pkg);
+				break;
+			}
+		} catch (final IllegalArgumentException | PackageManager.NameNotFoundException ignored) {}		// Ignore non-existent packages.
 	}
 
 	@OwnerUser @ProfileUser @WorkerThread public static void reprovisionManagedProfile(final Context context) {
@@ -434,7 +461,7 @@ public class PrismProvisioning extends IntentService {
 		policies.addCrossProfileIntentFilter(IntentFilters.forAction(Api.latest.ACTION_UNFREEZE).withDataSchemes("package", "packages"), FLAG_MANAGED_CAN_ACCESS_PARENT);
 		policies.addCrossProfileIntentFilter(IntentFilters.forAction(Api.latest.ACTION_LAUNCH).withDataSchemes("package", "intent"), FLAG_MANAGED_CAN_ACCESS_PARENT);
 
-		// Keep profile-to-parent app-details forwarding for app management flows.
+		// Keep parent-to-profile app-details forwarding for app management flows.
 		policies.addCrossProfileIntentFilter(IntentFilters.forAction(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).withDataScheme("package"), FLAG_MANAGED_CAN_ACCESS_PARENT);
 	}
 

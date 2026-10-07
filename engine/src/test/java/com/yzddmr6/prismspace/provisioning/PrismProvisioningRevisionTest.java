@@ -5,6 +5,10 @@ import android.content.Intent;
 
 import org.junit.Test;
 
+import java.util.Arrays;
+import java.util.Collections;
+
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -18,6 +22,42 @@ public class PrismProvisioningRevisionTest {
     @Test public void completedOldStatesRunMigration() {
         assertTrue(PrismProvisioning.shouldRunOneTimePostProvisionMigration(3, 10));
         assertTrue(PrismProvisioning.shouldRunOneTimePostProvisionMigration(9, 10));
+    }
+
+    @Test public void revisionIsBumpedForCrossProfileDirectionFix() throws Exception {
+        final java.lang.reflect.Field field = PrismProvisioning.class.getDeclaredField("POST_PROVISION_REV");
+        field.setAccessible(true);
+        assertEquals(11, field.getInt(null));
+    }
+
+    @Test public void previousRevisionRunsDirectionFixMigration() {
+        assertTrue(PrismProvisioning.shouldRunOneTimePostProvisionMigration(10, 11));
+        assertFalse(PrismProvisioning.shouldRunOneTimePostProvisionMigration(11, 11));
+    }
+
+    @Test public void migrationClearsOwnedCrossProfileFiltersBeforeReinstalling() throws Exception {
+        final String source = new String(java.nio.file.Files.readAllBytes(
+                java.nio.file.Paths.get("src/main/java/com/yzddmr6/prismspace/provisioning/PrismProvisioning.java")),
+                java.nio.charset.StandardCharsets.UTF_8);
+        final String migration = source.substring(source.indexOf("void performIncrementalProfileOwnerProvisioningIfNeeded"));
+        final int clear = migration.indexOf("clearCrossProfileIntentFilters");
+        final int reinstall = migration.indexOf("startProfileOwnerPostProvisioning(context, policies)");
+        assertTrue(clear >= 0);
+        assertTrue(reinstall > clear);
+    }
+
+    @Test public void suspendedCriticalAppIsUnsuspended() {
+        assertEquals(Collections.singletonList(PrismProvisioning.CriticalAppStep.Unsuspend),
+                PrismProvisioning.planCriticalAppConvergence(false, true));
+    }
+
+    @Test public void hiddenAndSuspendedCriticalAppIsFullyRestored() {
+        assertEquals(Arrays.asList(PrismProvisioning.CriticalAppStep.Unhide, PrismProvisioning.CriticalAppStep.Unsuspend),
+                PrismProvisioning.planCriticalAppConvergence(true, true));
+    }
+
+    @Test public void healthyCriticalAppNeedsNoRepair() {
+        assertTrue(PrismProvisioning.planCriticalAppConvergence(false, false).isEmpty());
     }
 
     @Test public void currentOrFutureStateSkipsMigration() {

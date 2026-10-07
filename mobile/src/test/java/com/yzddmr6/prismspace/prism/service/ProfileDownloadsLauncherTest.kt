@@ -9,7 +9,7 @@ class ProfileDownloadsLauncherTest {
 
     @Test fun describesCrossProfileTrampolineIntentFromMainToManagedProfile() {
         assertEquals(
-            DevicePolicyManager.FLAG_PARENT_CAN_ACCESS_MANAGED,
+            DevicePolicyManager.FLAG_MANAGED_CAN_ACCESS_PARENT,
             ProfileDownloadsLauncher.crossProfileForwardingFlags(),
         )
     }

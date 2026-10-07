@@ -1,7 +1,7 @@
 package com.yzddmr6.prismspace.prism.service
 
 import android.app.Activity
-import android.app.admin.DevicePolicyManager.FLAG_PARENT_CAN_ACCESS_MANAGED
+import android.app.admin.DevicePolicyManager.FLAG_MANAGED_CAN_ACCESS_PARENT
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -229,7 +229,8 @@ internal object ProfileDownloadsLauncher {
             addCategory(Intent.CATEGORY_DEFAULT)
         }
 
-    fun crossProfileForwardingFlags() = FLAG_PARENT_CAN_ACCESS_MANAGED
+    // Parent -> managed: intents fired in the main space resolve to the dual-space ProfileDownloadsActivity.
+    fun crossProfileForwardingFlags() = FLAG_MANAGED_CAN_ACCESS_PARENT
 
     fun crossProfilePreferredActivityComponent(context: Context) = ComponentName(
         context.packageName,

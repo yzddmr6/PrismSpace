@@ -151,6 +151,12 @@ object PrismAppControl {
 
 	@JvmStatic fun freeze(app: PrismAppInfo): Boolean {
 		val pkg = app.packageName
+		// Critical packages are kept available by provisioning convergence (enabled + unhidden + unsuspended);
+		// a freeze would only leave them half-usable until the next convergence, so it is refused outright.
+		if (app.isCritical) {
+			DiagnosticLog.i(TAG, "freeze refused for critical pkg=$pkg")
+			return false
+		}
 		val frozen = runAppControl(app.context(), app.user, "freeze pkg=$pkg", SetAppFrozen(pkg, true)) ?: false
 		if (frozen && app.isSystem) stopTreatingHiddenSysAppAsDisabled(app)
 		return frozen

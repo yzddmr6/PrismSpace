@@ -29,6 +29,18 @@ import static android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH;
 /**
  * Class to set CrossProfileIntentFilters during managed profile creation, and reset them after an
  * ota.
+ *
+ * <p>Direction semantics (AOSP DevicePolicyManagerService#addCrossProfileIntentFilter), the single
+ * source of truth for every route registered here:
+ * <pre>
+ * | DPM flag                       | Meaning                                                    | PM route (source -> target) |
+ * |--------------------------------|------------------------------------------------------------|-----------------------------|
+ * | FLAG_PARENT_CAN_ACCESS_MANAGED | intents fired in the managed profile resolve to parent     | managed -> parent           |
+ * |                                | activities                                                 |                             |
+ * | FLAG_MANAGED_CAN_ACCESS_PARENT | intents fired in the parent resolve to managed activities  | parent -> managed           |
+ * </pre>
+ * The flag names describe who may "access" whose intents, not where the intent is sent; do not
+ * derive the route from the flag name.
  */
 class CrossProfileIntentFiltersHelper {
 
@@ -44,16 +56,28 @@ class CrossProfileIntentFiltersHelper {
 		void addCrossProfileIntentFilter(IntentFilter filter, int user, int parent_user, int flags);
 	}
 
+	/** Receives each filter together with the DPM direction flag it must be registered with. */
+	interface DirectionalFilterSink {
+		void add(IntentFilter filter, int directionFlag);
+	}
+
 	public static void setFilters(final DevicePolicies policies) {
+		setFilters(policies::addCrossProfileIntentFilter);
+	}
+
+	static void setFilters(final DirectionalFilterSink sink) {
 		final int parent = 0;
 		final int managed = 10;
-		setFilters((filter, source, target, resolverFlags) -> policies.addCrossProfileIntentFilter(
+		// resolverFlags (e.g. SKIP_CURRENT_PROFILE) are intentionally dropped: the public DPM API
+		// (addCrossProfileIntentFilter(admin, filter, flags)) only accepts a direction flag, so a profile
+		// owner cannot express SKIP_CURRENT_PROFILE. Only the direction is preserved.
+		setFilters((filter, source, target, resolverFlags) -> sink.add(
 				filter, directionFlagFor(source, target, parent, managed)), parent, managed);
 	}
 
 	static int directionFlagFor(final int source, final int target, final int parent, final int managed) {
-		if (source == parent && target == managed) return FLAG_PARENT_CAN_ACCESS_MANAGED;
-		if (source == managed && target == parent) return FLAG_MANAGED_CAN_ACCESS_PARENT;
+		if (source == parent && target == managed) return FLAG_MANAGED_CAN_ACCESS_PARENT;	// parent -> managed
+		if (source == managed && target == parent) return FLAG_PARENT_CAN_ACCESS_MANAGED;	// managed -> parent
 		throw new IllegalArgumentException("Invalid cross-profile route " + source + " -> " + target);
 	}
 

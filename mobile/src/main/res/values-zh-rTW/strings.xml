@@ -74,6 +74,7 @@
     <string name="dialog_reactivate_message">雙開空間入口被意外關閉，請再次授權裝置管理權限以重新開啟。</string>
     <string name="dialog_cannot_destroy_message">如果要刪除整個雙開空間，請打開系統設定 -（帳戶和）帳號，點選「移除工作資料」。</string>
     <string name="dialog_critical_app_warning">這個應用程式（或服務）可能對於 Android 系統或其它應用程式的正常運作至關重要。如果繼續此操作，部分應用程式甚至整個系統可能因此變得不穩定或無法正常運作。\n\n確認繼續？</string>
+    <string name="dialog_critical_app_kept_available">此系統元件由 PrismSpace 保持可用，以確保安裝、檔案與設定流程正常，無法暫停。</string>
     <string name="dialog_space_setup_failed">抱歉，建立雙開空間時出現了異常。（階段 %1$d）</string>
 
     <string name="action_continue">繼續</string>

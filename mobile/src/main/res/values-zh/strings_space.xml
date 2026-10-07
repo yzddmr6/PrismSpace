@@ -97,7 +97,4 @@
     <string name="lz_system_apps_empty_search_hint">请输入应用名称或包名。这里只搜索实际安装在双开空间内的系统包。</string>
     <string name="lz_system_apps_empty_result_title">没有匹配的系统应用</string>
     <string name="lz_system_apps_empty_result_hint">请尝试其他名称或包名片段。</string>
-    <string name="lz_system_app_freeze_critical_title">冻结关键系统应用？</string>
-    <string name="lz_system_app_freeze_critical_body">%1$s（%2$s）是 Android 或其他应用所依赖的关键包。冻结它可能导致双开空间的配置、输入、安装或连接功能异常。仅在你明确知道如何撤销此操作时继续。</string>
-    <string name="lz_system_app_freeze_critical_confirm">仍要冻结</string>
 </resources>

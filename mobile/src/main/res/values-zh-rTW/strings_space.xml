@@ -7,9 +7,6 @@
     <string name="lz_system_apps_empty_search_hint">請輸入應用程式名稱或套件名稱。這裡只搜尋實際安裝在雙開空間內的系統套件。</string>
     <string name="lz_system_apps_empty_result_title">沒有相符的系統應用程式</string>
     <string name="lz_system_apps_empty_result_hint">請嘗試其他名稱或套件名稱片段。</string>
-    <string name="lz_system_app_freeze_critical_title">凍結關鍵系統應用程式？</string>
-    <string name="lz_system_app_freeze_critical_body">%1$s（%2$s）是 Android 或其他應用程式所依賴的關鍵套件。凍結它可能導致雙開空間的設定、輸入、安裝或連線功能異常。只有在你明確知道如何復原此操作時才繼續。</string>
-    <string name="lz_system_app_freeze_critical_confirm">仍要凍結</string>
 
     <!-- Space screen -->
     <string name="lz_space_title">空間</string>

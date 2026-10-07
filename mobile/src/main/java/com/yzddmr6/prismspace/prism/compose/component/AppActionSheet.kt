@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material.Divider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -22,11 +21,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -43,6 +38,8 @@ import com.yzddmr6.prismspace.prism.compose.vm.SpaceViewModel
 import com.yzddmr6.prismspace.prism.compose.vm.ActionFeedback
 import com.yzddmr6.prismspace.prism.compose.vm.AppFeedbackBus
 import com.yzddmr6.prismspace.prism.compose.vm.SpaceActionGate
+import com.yzddmr6.prismspace.prism.compose.vm.DualFreezeAction
+import com.yzddmr6.prismspace.prism.compose.vm.dualFreezeAction
 import com.yzddmr6.prismspace.prism.service.FileBridgeService
 import com.yzddmr6.prismspace.prism.ui.PrismAppsViewModel
 import com.yzddmr6.prismspace.shortcut.PrismAppShortcut
@@ -78,7 +75,6 @@ fun AppActionSheet(
     val scope = rememberCoroutineScope()
     val prismAppsVm: PrismAppsViewModel = viewModel()
     val activity = LocalContext.current as? androidx.fragment.app.FragmentActivity
-    var confirmCriticalFreeze by remember(row.pkg) { mutableStateOf(false) }
 
     fun dismiss() {
         scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
@@ -128,13 +124,18 @@ fun AppActionSheet(
                     }
                 }
 
-                SheetAction(
-                    icon = if (paused) PrismIcons.Sun else PrismIcons.Snow,
-                    title = if (paused) stringResource(R.string.lz_app_unfreeze) else stringResource(R.string.lz_app_freeze),
-                ) {
-                    if (!paused && row.critical) {
-                        confirmCriticalFreeze = true
-                    } else {
+                when (dualFreezeAction(row)) {
+                    // Critical packages are kept available by PrismSpace: no freeze action, only the reason.
+                    DualFreezeAction.KeptAvailable -> SheetAction(
+                        icon = PrismIcons.Info,
+                        title = stringResource(R.string.lz_app_freeze),
+                        subtitle = stringResource(R.string.dialog_critical_app_kept_available),
+                        enabled = false,
+                    ) {}
+                    DualFreezeAction.Freeze, DualFreezeAction.Unfreeze -> SheetAction(
+                        icon = if (paused) PrismIcons.Sun else PrismIcons.Snow,
+                        title = if (paused) stringResource(R.string.lz_app_unfreeze) else stringResource(R.string.lz_app_freeze),
+                    ) {
                         dismiss()
                         vm.setFrozen(row.pkg, !paused)
                     }
@@ -248,35 +249,6 @@ fun AppActionSheet(
 
             Spacer(modifier = Modifier.height(PrismSpacing.Sm))
         }
-    }
-
-    if (confirmCriticalFreeze) {
-        AlertDialog(
-            onDismissRequest = { confirmCriticalFreeze = false },
-            title = { Text(stringResource(R.string.lz_system_app_freeze_critical_title)) },
-            text = { Text(stringResource(R.string.lz_system_app_freeze_critical_body, row.label, row.pkg)) },
-            confirmButton = {
-                PrismTextButton(
-                    onClick = {
-                        confirmCriticalFreeze = false
-                        dismiss()
-                        vm.setFrozen(row.pkg, true)
-                    },
-                ) {
-                    Text(
-                        stringResource(R.string.lz_system_app_freeze_critical_confirm),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            },
-            dismissButton = {
-                PrismTextButton(
-                    onClick = { confirmCriticalFreeze = false },
-                ) {
-                    Text(stringResource(R.string.lz_space_dialog_cancel))
-                }
-            },
-        )
     }
 }
 

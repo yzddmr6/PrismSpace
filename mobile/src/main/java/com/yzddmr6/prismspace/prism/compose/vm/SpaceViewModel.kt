@@ -80,6 +80,18 @@ internal data class SpaceAppInput(
 /** The row's single next-step action rendered as its inline button; null = no action row button. */
 enum class SpaceRowAction { Open, Resume, AddClone, ContinueInstall }
 
+/** The dual-segment freeze entry of the action sheet. */
+enum class DualFreezeAction { Freeze, Unfreeze, KeptAvailable }
+
+/** Critical packages are kept available by PrismSpace (provisioning re-enables, unhides and
+ *  unsuspends them), so they never offer a freeze action. A paused critical package left behind by
+ *  an older version still offers unfreeze so the user can recover it. */
+fun dualFreezeAction(row: SpaceRow): DualFreezeAction = when {
+    row.frozen || row.suspended -> DualFreezeAction.Unfreeze
+    row.critical -> DualFreezeAction.KeptAvailable
+    else -> DualFreezeAction.Freeze
+}
+
 // ---------------------------------------------------------------------------
 // Pure row model surfaced to the Compose UI
 // ---------------------------------------------------------------------------
@@ -712,6 +724,11 @@ class SpaceViewModel(app: Application, private val savedState: SavedStateHandle)
 
     fun setFrozen(pkg: String, frozen: Boolean) {
         val app = appFor(pkg, SpaceSegment.Dual) ?: return
+        if (frozen && app.isCritical) {
+            DiagnosticLog.i(TAG, "freeze refused for critical pkg=$pkg")
+            reportTransientError(prismResolver(getApplication())(R.string.dialog_critical_app_kept_available, emptyArray()))
+            return
+        }
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 if (frozen) {

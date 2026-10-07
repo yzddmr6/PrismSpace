@@ -14,10 +14,25 @@ import java.util.List;
 public class CrossProfileIntentFiltersHelperTest {
 
     @Test public void routeDirectionMapsBothWaysWithoutCollapsing() {
-        assertEquals(FLAG_PARENT_CAN_ACCESS_MANAGED,
-                CrossProfileIntentFiltersHelper.directionFlagFor(0, 10, 0, 10));
+        // AOSP: FLAG_MANAGED_CAN_ACCESS_PARENT = parent -> managed; FLAG_PARENT_CAN_ACCESS_MANAGED = managed -> parent.
         assertEquals(FLAG_MANAGED_CAN_ACCESS_PARENT,
+                CrossProfileIntentFiltersHelper.directionFlagFor(0, 10, 0, 10));
+        assertEquals(FLAG_PARENT_CAN_ACCESS_MANAGED,
                 CrossProfileIntentFiltersHelper.directionFlagFor(10, 0, 0, 10));
+    }
+
+    @Test public void dpmRegistrationUsesAospDirectionForEveryFilter() {
+        final List<Integer> flags = new ArrayList<>();
+        CrossProfileIntentFiltersHelper.setFilters((filter, directionFlag) -> flags.add(directionFlag));
+
+        assertEquals(17, flags.size());
+        for (int i = 0; i < flags.size(); i++) {
+            // Index 9 is SEND / SEND_MULTIPLE, the only parent -> managed filter; every other AOSP filter
+            // (telephony, SMS/MMS, network settings, HOME, GET_CONTENT, OPEN_DOCUMENT, PICK, speech,
+            // capture, alarms) is managed -> parent.
+            final int expected = i == 9 ? FLAG_MANAGED_CAN_ACCESS_PARENT : FLAG_PARENT_CAN_ACCESS_MANAGED;
+            assertEquals("filter " + i + " direction flag", expected, (int) flags.get(i));
+        }
     }
 
     @Test(expected = IllegalArgumentException.class)

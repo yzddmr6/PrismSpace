@@ -1,6 +1,8 @@
 package com.yzddmr6.prismspace.prism.compose
 
+import com.yzddmr6.prismspace.prism.compose.vm.DualFreezeAction
 import com.yzddmr6.prismspace.prism.compose.vm.SpaceAppInput
+import com.yzddmr6.prismspace.prism.compose.vm.dualFreezeAction
 import com.yzddmr6.prismspace.prism.compose.vm.SpaceRowAction
 import com.yzddmr6.prismspace.prism.compose.vm.SpaceSegment
 import com.yzddmr6.prismspace.prism.compose.vm.mapRows
@@ -90,6 +92,25 @@ class SpaceMapTest {
     @Test
     fun `critical package classification reaches the row model`() {
         assertTrue(mapRows(listOf(dualInput(system = true, critical = true))).single().critical)
+    }
+
+    @Test
+    fun `critical package offers no freeze action`() {
+        val row = mapRows(listOf(dualInput(system = true, critical = true))).single()
+        assertEquals(DualFreezeAction.KeptAvailable, dualFreezeAction(row))
+    }
+
+    @Test
+    fun `paused critical package left by an older version can still be unfrozen`() {
+        assertEquals(DualFreezeAction.Unfreeze,
+            dualFreezeAction(mapRows(listOf(dualInput(system = true, critical = true, suspended = true))).single()))
+        assertEquals(DualFreezeAction.Unfreeze,
+            dualFreezeAction(mapRows(listOf(dualInput(system = true, critical = true, frozen = true))).single()))
+    }
+
+    @Test
+    fun `non-critical system package keeps freeze action`() {
+        assertEquals(DualFreezeAction.Freeze, dualFreezeAction(mapRows(listOf(dualInput(system = true))).single()))
     }
 
     @Test

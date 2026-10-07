@@ -1,6 +1,6 @@
 package com.yzddmr6.prismspace.engine
 
-import android.app.admin.DevicePolicyManager.FLAG_MANAGED_CAN_ACCESS_PARENT
+import android.app.admin.DevicePolicyManager.FLAG_PARENT_CAN_ACCESS_MANAGED
 import android.content.*
 import com.yzddmr6.prismspace.util.DevicePolicies
 import com.yzddmr6.prismspace.util.Users
@@ -25,8 +25,8 @@ object CrossProfile {
 		addRequiredForwarding(context, intent)
 	}
 
-		// FLAG_MANAGED_CAN_ACCESS_PARENT forwards intents from managed profile to parent profile.
-		// The opposite direction would make lazy fallback registration unusable.
+		// FLAG_PARENT_CAN_ACCESS_MANAGED forwards intents fired in the managed profile to parent activities
+		// (managed -> parent). FLAG_MANAGED_CAN_ACCESS_PARENT is the opposite route and would never resolve here.
 	private fun addRequiredForwarding(context: Context, intent: Intent) = DevicePolicies(context).addCrossProfileIntentFilter(
-			IntentFilter(intent.action).apply { addCategory(CATEGORY_PARENT_PROFILE) }, FLAG_MANAGED_CAN_ACCESS_PARENT)
+			IntentFilter(intent.action).apply { addCategory(CATEGORY_PARENT_PROFILE) }, FLAG_PARENT_CAN_ACCESS_MANAGED)
 }

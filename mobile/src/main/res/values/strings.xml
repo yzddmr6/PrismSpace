@@ -77,6 +77,7 @@
     <string name="dialog_reactivate_message">PrismSpace was unexpectedly deactivated, please grant the Device Admin permission to re-activate.</string>
     <string name="dialog_cannot_destroy_message">To remove the whole PrismSpace space, please open system \"Settings - Accounts\" and select \"Remove work profile\".</string>
     <string name="dialog_critical_app_warning">This app (or component) is critical for the Android system or other apps to work properly. If proceed, some apps or the whole system may become unstable or malfunctional.\n\nDo you really want to proceed?</string>
+    <string name="dialog_critical_app_kept_available">This system component is kept available by PrismSpace so that installation, file and settings flows keep working. It cannot be paused.</string>
     <string name="dialog_space_setup_failed">Sorry, something went wrong in PrismSpace setup. (stage %1$d)</string>
     <string name="dialog_root_setup_profile_exists">A PrismSpace clone space already exists on this device. To create it again, first remove the existing one from the main space, then try setup again.</string>
     <string name="dialog_shizuku_permission_denied">Shizuku permission was not granted, so the privileged setup cannot continue. Tap again and choose Allow, or install and start Shizuku / Sui first.</string>

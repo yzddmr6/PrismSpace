@@ -97,7 +97,4 @@
     <string name="lz_system_apps_empty_search_hint">Enter an app name or package name. Only system packages actually installed in the dual space are searched.</string>
     <string name="lz_system_apps_empty_result_title">No matching system apps</string>
     <string name="lz_system_apps_empty_result_hint">Try a different name or package fragment.</string>
-    <string name="lz_system_app_freeze_critical_title">Freeze a critical system app?</string>
-    <string name="lz_system_app_freeze_critical_body">%1$s (%2$s) is required by Android or other apps. Freezing it may break the dual space, including setup, input, installation, or connectivity. Continue only if you know how to undo this change.</string>
-    <string name="lz_system_app_freeze_critical_confirm">Freeze anyway</string>
 </resources>
