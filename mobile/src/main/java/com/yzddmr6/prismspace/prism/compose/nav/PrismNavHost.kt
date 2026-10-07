@@ -51,6 +51,8 @@ import kotlinx.coroutines.withContext
  * bug). launchSingleTop + popUpTo(start){saveState} + restoreState is the standard tab pattern.
  */
 fun NavHostController.navigateToTab(route: String) {
+    // A picker page must never be captured by the tab saveState below (and restored later).
+    popSystemAppPickers()
     navigate(route) {
         launchSingleTop = true
         popUpTo(graph.findStartDestination().id) { saveState = true }
@@ -95,11 +97,7 @@ fun PrismNavHost(navController: NavHostController) {
     LaunchedEffect(navController) {
         // "去启用" from the clone install-method selector → jump to Settings (run-mode row is at the top).
         AppLaunchSignals.openRunMode.collect {
-            navController.navigate(PrismRoutes.SETTINGS) {
-                launchSingleTop = true
-                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                restoreState = true
-            }
+            navController.navigateToTab(PrismRoutes.SETTINGS)
         }
     }
     LaunchedEffect(navController) {
@@ -108,7 +106,7 @@ fun PrismNavHost(navController: NavHostController) {
         AppLaunchSignals.openSystemAppPicker.collect { request ->
             if (request != null && request.nonce != lastNonce) {
                 lastNonce = request.nonce
-                navController.navigate(PrismRoutes.systemAppPicker(request.userId, request.origin)) { launchSingleTop = true }
+                navController.openSystemAppPicker(request.userId, request.origin)
             }
         }
     }
@@ -120,7 +118,7 @@ fun PrismNavHost(navController: NavHostController) {
             val userId = awaitUsableSpace(context, expectation.userId) ?: return@collect   // Keep the mark; retry next start.
             when (val status = withContext(Dispatchers.IO) { SystemAppSelectionClient.readStatus(context, userId) }) {
                 is ProfileBridgeResult.Value -> if (status.value == SelectionStatus.Pending) {
-                    navController.navigate(PrismRoutes.systemAppPicker(userId, SYSTEM_APP_PICKER_ORIGIN_SETUP)) { launchSingleTop = true }
+                    navController.openSystemAppPicker(userId, SYSTEM_APP_PICKER_ORIGIN_SETUP)
                 } else SystemAppPickerPrompt.clear(context)
                 else -> DiagnosticLog.i("Prism.SysAppPicker", "picker_not_ready u=$userId usability=bridge:${status.javaClass.simpleName}")
             }
@@ -184,11 +182,8 @@ fun PrismNavHost(navController: NavHostController) {
                         },
                     ),
                 ) { entry ->
-                    val origin = entry.arguments?.getString(SystemAppPickerViewModel.ARG_ORIGIN)
-                    SystemAppPickerScreen(onFinished = {
-                        if (origin == SYSTEM_APP_PICKER_ORIGIN_SETUP) navController.navigateToTab(PrismRoutes.HOME)
-                        else navController.popBackStack()
-                    })
+                    val origin = entry.arguments?.getString(SystemAppPickerViewModel.ARG_ORIGIN) ?: SYSTEM_APP_PICKER_ORIGIN_SPACE
+                    SystemAppPickerScreen(onFinished = { navController.exitSystemAppPicker(origin) })
                 }
             }
         }

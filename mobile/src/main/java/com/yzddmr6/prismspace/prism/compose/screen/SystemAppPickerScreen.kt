@@ -72,7 +72,9 @@ fun SystemAppPickerScreen(onFinished: () -> Unit) {
     val activity = LocalContext.current as? FragmentActivity
 
     LaunchedEffect(state.phase) { if (state.phase == SystemAppPickerPhase.Done) onFinished() }
-    BackHandler(enabled = state.phase != SystemAppPickerPhase.Submitting) { vm.later() }
+    // Once finished, back / 稍后 only leave the page; they never re-run the deferral.
+    val later = { if (state.phase == SystemAppPickerPhase.Done) onFinished() else vm.later() }
+    BackHandler(enabled = state.phase != SystemAppPickerPhase.Submitting) { later() }
 
     Scaffold(
         topBar = {
@@ -91,7 +93,7 @@ fun SystemAppPickerScreen(onFinished: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 PrismTextButton(
-                    onClick = { vm.later() },
+                    onClick = { later() },
                     enabled = state.phase != SystemAppPickerPhase.Submitting,
                 ) { Text(stringResource(R.string.lz_sysapp_picker_later)) }
                 Button(
