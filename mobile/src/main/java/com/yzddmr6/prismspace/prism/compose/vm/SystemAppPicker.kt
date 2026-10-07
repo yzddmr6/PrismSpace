@@ -1,11 +1,14 @@
 package com.yzddmr6.prismspace.prism.compose.vm
 
 import android.content.pm.ApplicationInfo
+import java.text.Collator
+import java.util.Locale
 import com.yzddmr6.prismspace.bridge.SystemAppChoice
 import com.yzddmr6.prismspace.bridge.SystemAppOverrideChange
 import com.yzddmr6.prismspace.bridge.SystemAppSelectionEntry
 import com.yzddmr6.prismspace.provisioning.SelectionStatus
 import com.yzddmr6.prismspace.provisioning.SystemAppDefaults
+import com.yzddmr6.prismspace.provisioning.SystemAppOverride
 import com.yzddmr6.prismspace.provisioning.SystemAppTarget
 
 /** A main-space launcher app the user may bring into the dual space by enabling its system package. */
@@ -15,6 +18,8 @@ data class SystemAppCandidate(
     val inDefault: Boolean,
     /** Current profile-side policy target; null = not managed / not reported. */
     val target: SystemAppTarget?,
+    /** Current profile-side user override. */
+    val override: SystemAppOverride? = null,
 )
 
 /** A /data/app OEM preinstall: needs the normal copy + user-confirmed install path. */
@@ -53,6 +58,7 @@ fun pickerGroups(
     mainApps: List<MainLauncherApp>,
     entries: List<SystemAppSelectionEntry>,
     selfPackage: String,
+    locale: Locale = Locale.getDefault(),
 ): Pair<List<SystemAppCandidate>, List<PreinstalledCandidate>> {
     val byPkg = entries.associateBy { it.pkg }
     val system = ArrayList<SystemAppCandidate>()
@@ -61,12 +67,15 @@ fun pickerGroups(
         val entry = byPkg[app.pkg]
         if (entry?.critical == true) return@forEach
         if (app.flags and ApplicationInfo.FLAG_SYSTEM != 0) {
-            system += SystemAppCandidate(app.pkg, app.label, entry?.inDefault ?: (app.pkg in SystemAppDefaults.packages), entry?.target)
+            system += SystemAppCandidate(app.pkg, app.label, entry?.inDefault ?: (app.pkg in SystemAppDefaults.packages),
+                entry?.target, entry?.override)
         } else if (!app.installedInDual && isOemDataAppPreinstall(app.flags, app.sourceDir, app.pkg, app.installer)) {
             preinstalled += PreinstalledCandidate(app.pkg, app.label)
         }
     }
-    return system.sortedBy { it.label.lowercase() } to preinstalled.sortedBy { it.label.lowercase() }
+    val collator = Collator.getInstance(locale)
+    return system.sortedWith { a, b -> collator.compare(a.label, b.label) } to
+        preinstalled.sortedWith { a, b -> collator.compare(a.label, b.label) }
 }
 
 /** First-run (Pending, or never initialized) proposes the default set; later visits show reality. */
@@ -78,14 +87,19 @@ fun preselectedSystemApps(status: SelectionStatus?, candidates: List<SystemAppCa
  * Overrides only record deviations from the rule result under [statusAfter]: a choice equal to
  * "default set ∧ confirmed" is cleared, anything else is an explicit Enabled/Disabled.
  * Preinstalls are never pre-checked by the caller; every checked one is staged for install.
+ *
+ * With [preselected], a candidate is only sent when the user toggled it or its stored override must
+ * change: every sent package is force-converged, which would otherwise thaw packages the user froze
+ * (a frozen camera is still "in the space" and therefore pre-checked).
  */
 fun commitSelection(
     statusAfter: SelectionStatus,
     candidates: List<SystemAppCandidate>,
     checked: Set<String>,
     preinstalledChecked: Set<String> = emptySet(),
+    preselected: Set<String>? = null,
 ): SelectionCommit {
-    val changes = candidates.map { candidate ->
+    val changes = candidates.mapNotNull { candidate ->
         val desired = candidate.pkg in checked
         val ruleResult = statusAfter == SelectionStatus.Confirmed && candidate.inDefault
         val choice = when {
@@ -93,7 +107,13 @@ fun commitSelection(
             desired -> SystemAppChoice.Enabled
             else -> SystemAppChoice.Disabled
         }
-        SystemAppOverrideChange(candidate.pkg, choice)
+        val storedChoice = when (candidate.override) {
+            SystemAppOverride.Enabled -> SystemAppChoice.Enabled
+            SystemAppOverride.Disabled -> SystemAppChoice.Disabled
+            null -> SystemAppChoice.Clear
+        }
+        val untouched = preselected != null && desired == (candidate.pkg in preselected) && choice == storedChoice
+        if (untouched) null else SystemAppOverrideChange(candidate.pkg, choice)
     }
     return SelectionCommit(changes, preinstalledChecked.toList())
 }

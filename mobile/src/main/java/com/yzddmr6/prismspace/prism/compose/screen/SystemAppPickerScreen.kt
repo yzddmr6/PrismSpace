@@ -52,6 +52,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.yzddmr6.prismspace.mobile.R
 import com.yzddmr6.prismspace.prism.compose.component.GroupCard
 import com.yzddmr6.prismspace.prism.compose.component.PrismTextButton
+import com.yzddmr6.prismspace.prism.compose.nav.SYSTEM_APP_PICKER_ORIGIN_SETUP
 import com.yzddmr6.prismspace.prism.compose.theme.PrismSpacing
 import com.yzddmr6.prismspace.prism.compose.vm.SystemAppPickerPhase
 import com.yzddmr6.prismspace.prism.compose.vm.SystemAppPickerViewModel
@@ -109,7 +110,8 @@ fun SystemAppPickerScreen(onFinished: () -> Unit) {
                 .padding(horizontal = PrismSpacing.Lg, vertical = PrismSpacing.Sm),
             verticalArrangement = Arrangement.spacedBy(PrismSpacing.Md),
         ) {
-            Text(
+            // The intro announces a just-created space; it is only true right after creation.
+            if (vm.origin == SYSTEM_APP_PICKER_ORIGIN_SETUP) Text(
                 text = stringResource(R.string.lz_sysapp_picker_intro),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -75,7 +75,8 @@ class SystemAppPickerViewModel(app: Application, savedState: SavedStateHandle) :
                 return@launch
             }
             val (system, preinstalled) = withContext(Dispatchers.IO) {
-                pickerGroups(mainLauncherApps(context), selection.entries, context.packageName)
+                pickerGroups(mainLauncherApps(context), selection.entries, context.packageName,
+                    PrismLocale.wrap(context).resources.configuration.locales[0])
             }
             val next = SystemAppPickerReducer.loaded(_state.value, selection.status, system, preinstalled)
             _state.value = next
@@ -92,7 +93,8 @@ class SystemAppPickerViewModel(app: Application, savedState: SavedStateHandle) :
         _state.value = SystemAppPickerReducer.submitting(current)
         val context: Context = getApplication()
         val res = prismResolver(context)
-        val commit = commitSelection(SelectionStatus.Confirmed, current.system, current.checked, current.preinstalledChecked)
+        val commit = commitSelection(SelectionStatus.Confirmed, current.system, current.checked, current.preinstalledChecked,
+            preselected = preselectedSystemApps(current.status, current.system))
         fun names(choice: SystemAppChoice) = commit.changes.filter { it.choice == choice }.joinToString(",", "[", "]") { it.pkg }
         DiagnosticLog.i(TAG, "picker_commit u=$userId enable=${names(SystemAppChoice.Enabled)} disable=${names(SystemAppChoice.Disabled)}" +
             " clear=${names(SystemAppChoice.Clear)} prepare=${commit.prepare.joinToString(",", "[", "]")}")

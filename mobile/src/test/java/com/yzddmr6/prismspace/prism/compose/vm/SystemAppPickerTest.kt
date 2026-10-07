@@ -7,6 +7,7 @@ import com.yzddmr6.prismspace.bridge.SystemAppOverrideChange
 import com.yzddmr6.prismspace.bridge.SystemAppSelectionEntry
 import com.yzddmr6.prismspace.controller.chunkSelection
 import com.yzddmr6.prismspace.provisioning.SelectionStatus
+import com.yzddmr6.prismspace.provisioning.SystemAppOverride
 import com.yzddmr6.prismspace.provisioning.SystemAppTarget
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -50,6 +51,25 @@ class SystemAppPickerTest {
         // A seeded space (Deferred) confirming the page: unchecking a default must stick as Disabled.
         val commit = commitSelection(SelectionStatus.Confirmed, listOf(camera), checked = emptySet())
         assertEquals(listOf(SystemAppOverrideChange("com.android.camera", SystemAppChoice.Disabled)), commit.changes)
+    }
+
+    @Test fun untouchedCandidatesAreNotSentSoUserFreezesSurvive() {
+        // A user-frozen camera is still Available (pre-checked); confirming without touching it must not
+        // force-converge (and thereby thaw) it. Toggled packages and stale overrides are still sent.
+        val frozenCamera = SystemAppCandidate("com.android.camera", "camera", inDefault = true, target = SystemAppTarget.Available)
+        val seededMms = SystemAppCandidate("com.android.mms", "mms", inDefault = false, target = SystemAppTarget.Unavailable,
+            override = SystemAppOverride.Disabled)
+        val candidates = listOf(frozenCamera, seededMms, market)
+        val preselected = preselectedSystemApps(SelectionStatus.Confirmed, candidates)
+        assertEquals(setOf("com.android.camera", "com.xiaomi.market"), preselected)
+
+        val untouched = commitSelection(SelectionStatus.Confirmed, candidates, checked = preselected, preselected = preselected)
+        assertEquals(listOf(SystemAppOverrideChange("com.android.mms", SystemAppChoice.Clear),
+            SystemAppOverrideChange("com.xiaomi.market", SystemAppChoice.Enabled)), untouched.changes)
+
+        val toggled = commitSelection(SelectionStatus.Confirmed, candidates, checked = preselected - "com.android.camera",
+            preselected = preselected)
+        assertTrue(SystemAppOverrideChange("com.android.camera", SystemAppChoice.Disabled) in toggled.changes)
     }
 
     @Test fun preinstallsAreStagedOnlyWhenChecked() {
