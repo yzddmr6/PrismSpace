@@ -97,4 +97,29 @@
     <string name="lz_system_apps_empty_search_hint">Enter an app name or package name. Only system packages actually installed in the dual space are searched.</string>
     <string name="lz_system_apps_empty_result_title">No matching system apps</string>
     <string name="lz_system_apps_empty_result_hint">Try a different name or package fragment.</string>
+
+    <!-- System app policy: selection page, membership actions, launchability -->
+    <string name="lz_sysapp_picker_title">Choose system apps for the dual space</string>
+    <string name="lz_sysapp_picker_intro">The dual space is ready. Check the apps you want to use inside it. You can change this any time from the Space page.</string>
+    <string name="lz_sysapp_picker_group_system">System apps</string>
+    <string name="lz_sysapp_picker_group_system_hint">Enabled directly inside the dual space after you confirm. No APK is copied.</string>
+    <string name="lz_sysapp_picker_group_preinstalled">Preinstalled apps (install required)</string>
+    <string name="lz_sysapp_picker_group_preinstalled_hint">The APK is copied into the dual space; confirm the install with the system installer from the dual space entry page.</string>
+    <string name="lz_sysapp_picker_needs_install">Install required</string>
+    <string name="lz_sysapp_picker_waiting">Waiting for the dual space…</string>
+    <string name="lz_sysapp_picker_unavailable">The dual space is not ready yet. You can set this later under “Add system apps” on the Space page.</string>
+    <string name="lz_sysapp_picker_later">Later</string>
+    <string name="lz_sysapp_picker_confirm">Confirm</string>
+    <string name="lz_sysapp_picker_result">Enabled %1$d system apps; %2$d preinstalled apps waiting to install</string>
+    <string name="lz_sysapp_picker_result_issues">%1$d not found on this device, %2$d failed</string>
+    <string name="lz_space_add_system_apps">Add system apps</string>
+    <string name="lz_space_menu_show_all_system">Show all system apps</string>
+    <string name="lz_vm_chip_no_ui">No UI</string>
+    <string name="lz_vm_chip_not_added">Not added</string>
+    <string name="lz_space_row_add">Add</string>
+    <string name="lz_app_add_system_to_space">Add to the dual space</string>
+    <string name="lz_app_remove_system_from_space">Remove from the dual space</string>
+    <string name="lz_app_remove_system_from_space_subtitle">Hidden and stopped, data is kept; add it back any time</string>
+    <string name="lz_app_no_launcher_entry">This app has no launcher entry and cannot be opened directly</string>
+    <string name="lz_app_removed_system_from_space">%1$s was removed from the dual space</string>
 </resources>

@@ -25,12 +25,12 @@ class UninstallRoutingContractTest {
         assertEquals("failed:unknown", uninstallLaunchContent(false, "  "))
     }
 
-    @Test fun requestRemovalHasNoUserZeroUninstallIntent() {
+    @Test fun appControlHasNoUserZeroUninstallOrSystemRemovalPath() {
         val source = readSource("mobile/src/main/java/com/yzddmr6/prismspace/controller/PrismAppControl.kt").codeOnly()
-        val requestRemoval = source.substringAfter("fun requestRemoval").substringBefore("@JvmStatic fun launch(")
 
-        assertFalse(requestRemoval.contains("ACTION_UNINSTALL_PACKAGE"))
-        assertFalse(requestRemoval.contains("EXTRA_USER"))
+        // System packages leave a space through the system app policy, not a disable/uninstall dialog.
+        assertFalse(source.contains("fun requestRemoval"))
+        assertFalse(source.contains("ACTION_UNINSTALL_PACKAGE"))
         assertFalse(source.contains("ITEM_CATEGORY, \"system\""))
     }
 

@@ -1,10 +1,13 @@
 package com.yzddmr6.prismspace.prism.compose
 
+import com.yzddmr6.prismspace.prism.compose.vm.AppLaunchability
 import com.yzddmr6.prismspace.prism.compose.vm.DualFreezeAction
 import com.yzddmr6.prismspace.prism.compose.vm.SpaceAppInput
 import com.yzddmr6.prismspace.prism.compose.vm.dualFreezeAction
 import com.yzddmr6.prismspace.prism.compose.vm.SpaceRowAction
 import com.yzddmr6.prismspace.prism.compose.vm.SpaceSegment
+import com.yzddmr6.prismspace.prism.compose.vm.SystemMembershipAction
+import com.yzddmr6.prismspace.prism.compose.vm.systemMembershipAction
 import com.yzddmr6.prismspace.prism.compose.vm.mapRows
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -26,11 +29,15 @@ class SpaceMapTest {
         cloned: Boolean = false,
         prepared: Boolean = false,
         critical: Boolean = false,
+        launchability: AppLaunchability? = null,
+        policyHidden: Boolean = false,
     ) = SpaceAppInput(
         pkg = pkg, label = label, frozen = frozen, suspended = suspended,
         launchable = launchable, system = system, cloned = cloned, prepared = prepared,
         segment = SpaceSegment.Dual,
         critical = critical,
+        launchability = launchability,
+        policyHidden = policyHidden,
     )
 
     private fun mainInput(
@@ -76,17 +83,59 @@ class SpaceMapTest {
     }
 
     @Test
-    fun `dual system app gets 系统应用 tag and no row action`() {
-        val row = mapRows(listOf(dualInput(system = true))).single()
+    fun `dual healthy system app offers Open like any other app`() {
+        // Launchability never keys on "is system": Settings in the dual space gets an Open button.
+        val row = mapRows(listOf(dualInput(pkg = "com.android.settings", system = true,
+            launchability = AppLaunchability.Launchable))).single()
         assertEquals("系统应用", row.chipText)
+        assertEquals(SpaceRowAction.Open, row.primaryAction)
+        assertTrue(row.launchable)
+    }
+
+    @Test
+    fun `dual paused system app reads paused and offers Resume`() {
+        val row = mapRows(listOf(dualInput(system = true, frozen = true, launchability = AppLaunchability.Paused))).single()
+        assertEquals("已暂停", row.chipText)
+        assertEquals(SpaceRowAction.Resume, row.primaryAction)
+    }
+
+    @Test
+    fun `dual package without launcher entry reads 无界面 and has no action`() {
+        val row = mapRows(listOf(dualInput(pkg = "com.google.ar.core", launchable = false,
+            launchability = AppLaunchability.NoLauncherEntry))).single()
+        assertEquals("无界面", row.chipText)
+        assertEquals(null, row.primaryAction)
+        assertFalse(row.launchable)
+        val legacy = mapRows(listOf(dualInput(launchable = false))).single()
+        assertEquals("无界面", legacy.chipText)
+        assertEquals(null, legacy.primaryAction)
+    }
+
+    @Test
+    fun `dual policy-hidden system app reads 未添加 and offers 添加`() {
+        val row = mapRows(listOf(dualInput(pkg = "com.android.camera", system = true, frozen = true, suspended = true,
+            launchability = AppLaunchability.Paused, policyHidden = true))).single()
+        assertEquals("未添加", row.chipText)
+        assertEquals(SpaceRowAction.AddSystemApp, row.primaryAction)
+        assertFalse(row.launchable)
+        assertEquals(SystemMembershipAction.Add, systemMembershipAction(row))
+    }
+
+    @Test
+    fun `paused outranks no-ui and system tags`() {
+        val row = mapRows(listOf(dualInput(system = true, suspended = true, launchability = AppLaunchability.NoLauncherEntry))).single()
+        assertEquals("已暂停", row.chipText)
         assertEquals(null, row.primaryAction)
     }
 
     @Test
-    fun `dual healthy but not launchable has neither tag nor action`() {
-        val row = mapRows(listOf(dualInput(launchable = false))).single()
-        assertEquals(null, row.chipText)
-        assertEquals(null, row.primaryAction)
+    fun `system membership actions follow criticality and launcher entry`() {
+        fun action(critical: Boolean, launchability: AppLaunchability, system: Boolean = true) =
+            systemMembershipAction(mapRows(listOf(dualInput(system = system, critical = critical, launchability = launchability))).single())
+        assertEquals(SystemMembershipAction.Remove, action(critical = false, launchability = AppLaunchability.Launchable))
+        assertEquals(SystemMembershipAction.None, action(critical = true, launchability = AppLaunchability.Launchable))
+        assertEquals(SystemMembershipAction.None, action(critical = false, launchability = AppLaunchability.NoLauncherEntry))
+        assertEquals(SystemMembershipAction.None, action(critical = false, launchability = AppLaunchability.Launchable, system = false))
     }
 
     @Test

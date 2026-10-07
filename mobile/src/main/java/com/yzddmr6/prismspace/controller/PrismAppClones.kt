@@ -16,7 +16,6 @@ import android.os.Build.VERSION_CODES
 import android.os.Build.VERSION_CODES.P
 import com.yzddmr6.prismspace.analytics.DiagnosticLog
 import com.yzddmr6.prismspace.bridge.BridgeTargets
-import com.yzddmr6.prismspace.bridge.EnableSystemApp
 import androidx.annotation.IntDef
 import androidx.compose.runtime.snapshotFlow
 import androidx.core.content.getSystemService
@@ -42,7 +41,6 @@ import com.yzddmr6.prismspace.prism.compose.vm.PrismMode
 import com.yzddmr6.prismspace.prism.compose.vm.prismModeLabelRes
 import com.yzddmr6.prismspace.prism.compose.vm.ShizukuUtil
 import com.yzddmr6.prismspace.controller.PrismAppControl.launchSystemAppSettings
-import com.yzddmr6.prismspace.controller.PrismAppControl.unfreezeInitiallyFrozenSystemApp
 import com.yzddmr6.prismspace.data.PrismAppInfo
 import com.yzddmr6.prismspace.data.PrismAppListProvider
 import com.yzddmr6.prismspace.data.helper.hidden
@@ -177,15 +175,14 @@ class PrismAppClones(
 	 * reports [BatchCloneResult.Prepared] (never "cloned" — the user still confirms in the dual
 	 * space's system installer); a ready enhanced route reports [BatchCloneResult.Installed] only
 	 * after the install actually completes. Emits no UI; the batch caller summarizes once.
+	 *
+	 * @param forceNormalPreparation always stage for a user-confirmed install (the selection page's
+	 *        preinstalled group), even when Root/Shizuku is the configured method: never a silent install.
 	 */
-	suspend internal fun requestForBatch(): BatchCloneResult {
+	suspend internal fun requestForBatch(forceNormalPreparation: Boolean = false): BatchCloneResult {
 		val target = PrismNameManager.getAllNames(context).keys.firstOrNull() ?: return BatchCloneResult.Failed()
 		val runtime = CapabilityRepositoryProvider.get(context).runtimeSnapshot()
-		val mode = when (runtime.preferredMode) {
-			PrismMode.Root -> MODE_ROOT
-			PrismMode.Shizuku -> MODE_SHIZUKU
-			else -> MODE_INSTALLER   // 普通模式 → 文件同步
-		}
+		val mode = batchCloneMode(runtime.preferredMode, forceNormalPreparation)   // 普通模式 → 文件同步
 		val plan = planCloneRoute(
 			target.isParentProfile(),
 			app.isSystem,
@@ -374,18 +371,32 @@ class PrismAppClones(
 	/** Either by unfreezing initially frozen (system) app, enabling disabled system app, or clone user app. */
 	private fun makeAppAvailable(profile: UserHandle, mode: Int) {
 		val target = PrismAppListProvider.getInstance(context)[pkg, profile]
-		if (target != null && target.isHiddenSysPrismAppTreatedAsDisabled) {   // Frozen system app shown as disabled, just unfreeze it.
-			if (unfreezeInitiallyFrozenSystemApp(target) == true) {
-				UserCloneRegistry.add(context, pkg)
-				onCloneStateChanged()
-				feedback(PrismLocale.wrap(context).getString(R.string.toast_successfully_cloned, app.label))
-			}
+		if (target != null && target.isHiddenSysPrismAppTreatedAsDisabled) {   // Kept out by the system app policy: add it back.
+			vm.interactive(context) { enableSystemAppViaPolicy(profile) }
 		} else if (target != null && target.isInstalled && !target.enabled) {  // Disabled app may be shown as "removed"
 			launchSystemAppSettings(target)
 			feedback(PrismLocale.wrap(context).getString(R.string.toast_enable_disabled_system_app))
 		} else vm.interactive(context) {
 			cloneApp(app, profile, mode)
 		}
+	}
+
+	/** System apps are added through the dual space's system app policy (enableSystemApp inside the
+	 *  profile, no APK copy, no privilege). Only a verified "available" result counts as cloned. */
+	private suspend fun enableSystemAppViaPolicy(target: UserHandle) {
+		val result = withContext(Dispatchers.IO) { SystemAppSelectionClient.setAvailable(context, target.toId(), pkg, available = true) }
+		val report = (result as? ProfileBridgeResult.Value)?.value
+		if (report == null) {
+			feedback(
+				profileBridgeFailureMessage(context, result, PrismLocale.wrap(context).getString(R.string.toast_cannot_clone, app.label)),
+				isError = true,
+			)
+			return
+		}
+		if (pkg in report.available) {
+			onCloneStateChanged()
+			feedback(PrismLocale.wrap(context).getString(R.string.toast_successfully_cloned, app.label))
+		} else feedback(PrismLocale.wrap(context).getString(R.string.toast_cannot_clone, app.label), isError = true)
 	}
 
 	private suspend fun cloneApp(source: PrismAppInfo, target: UserHandle, mode: @AppCloneMode Int) {
@@ -446,32 +457,7 @@ class PrismAppClones(
 
 				CloneRoute.SYSTEM_ENABLE -> {
 					analytics().event("clone_sys").with(Analytics.Param.ITEM_ID, pkg).send()
-					val enabled = when (val result = runProfileBridgeOperation(
-						context,
-						TAG,
-						"enable system app pkg=$pkg",
-						target = BridgeTargets.profile(target.toId()),
-						command = EnableSystemApp(pkg),
-					)) {
-						is ProfileBridgeResult.Value -> result.value == true
-						else -> {
-							feedback(
-								profileBridgeFailureMessage(context, result, PrismLocale.wrap(context).getString(R.string.toast_cannot_clone, source.label)),
-								isError = true,
-							)
-							return
-						}
-					}
-					if (enabled) {
-						// Third-party clones are recognized by package presence. Only successful system-app
-						// enablement needs an explicit marker; recording earlier would create a ghost clone
-						// when enableSystemApp fails because the system package already exists in the profile.
-						UserCloneRegistry.add(context, pkg)
-						PrismAppListProvider.getInstance(context).refreshPackage(pkg, target, true)
-						onCloneStateChanged()
-						feedback(PrismLocale.wrap(context).getString(R.string.toast_successfully_cloned, source.label))
-					}
-					else feedback(PrismLocale.wrap(context).getString(R.string.toast_cannot_clone, source.label), isError = true)
+					enableSystemAppViaPolicy(target)
 					return
 				}
 

@@ -21,8 +21,6 @@ class BridgeCommandParcelTest {
         assertRoundTrip(SetPackagesSuspended(listOf("a", "b"), false), arrayOf("b"))
         assertRoundTrip(SetPackagesFrozen(listOf("a", "b"), true), arrayOf("a"))
         assertRoundTrip(EnsureAppFreeToLaunch("pkg"), "reason")
-        assertRoundTrip(MarkClonedSystemApp("pkg"), true)
-        assertRoundTrip(EnableSystemApp("pkg"), false)
         assertRoundTrip(
             QuerySystemAppSelectionPage(0, 50),
             SystemAppSelectionPage(

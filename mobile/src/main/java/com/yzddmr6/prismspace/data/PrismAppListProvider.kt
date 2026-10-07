@@ -29,12 +29,15 @@ import com.yzddmr6.prismspace.common.app.AppInfo
 import com.yzddmr6.prismspace.util.UserHandles
 import com.yzddmr6.prismspace.common.app.AppListProvider
 import com.yzddmr6.prismspace.data.helper.installed
-import com.yzddmr6.prismspace.engine.ClonedHiddenSystemApps
+import com.yzddmr6.prismspace.analytics.DiagnosticLog
+import com.yzddmr6.prismspace.provisioning.SystemAppListSnapshot
+import com.yzddmr6.prismspace.provisioning.SystemAppPolicyRuntime
 import com.yzddmr6.prismspace.provisioning.SystemAppsManager
 import com.yzddmr6.prismspace.shuttle.ShuttleOutcome
 import com.yzddmr6.prismspace.util.Users
 import com.yzddmr6.prismspace.util.Users.Companion.isParentProfile
 import com.yzddmr6.prismspace.util.Users.Companion.toId
+import java.util.concurrent.ConcurrentHashMap
 import java.util.function.Predicate
 
 /**
@@ -123,8 +126,6 @@ class PrismAppListProvider : AppListProvider<PrismAppInfo>() {
 				mPrismAppMap[profile]?.clear()
 			}
 		}, IntentFilter(Intent.ACTION_MANAGED_PROFILE_REMOVED))
-
-		mClonedHiddenSystemApps.migrateIfNeeded()
 	}
 
 	private fun refresh(profile: UserHandle): ArrayMap<String, PrismAppInfo> {
@@ -136,6 +137,9 @@ class PrismAppListProvider : AppListProvider<PrismAppInfo>() {
 			when (val outcome = queryProfileApps(profile)) {
 				is ShuttleOutcome.Value -> outcome.value?.also { entries ->
 					snapshotsByPackage = entries.associateBy(ProfileAppEntry::packageName)
+					// Policy state is profile-side truth; the parent only caches it per snapshot.
+					mPolicyHidden[profile] = entries.filter(ProfileAppEntry::policyHidden).mapTo(HashSet(), ProfileAppEntry::packageName)
+					mLauncherEntries[profile] = entries.filter(ProfileAppEntry::launcherEntry).mapTo(HashSet(), ProfileAppEntry::packageName)
 				}?.asSequence()?.map(ProfileAppEntry::toApplicationInfo)
 				is ShuttleOutcome.NotReady -> null.also {
 					Log.w(TAG, "Unable to refresh profile apps user=${profile.toId()}: shuttle not ready ${outcome.cause}")
@@ -223,6 +227,18 @@ class PrismAppListProvider : AppListProvider<PrismAppInfo>() {
 		notifyUpdate(setOf(app))
 	}
 
+	/** Whether the profile-side system app policy targets [pkg] as unavailable in [profile]. */
+	fun isPolicyHidden(profile: UserHandle, pkg: String): Boolean = mPolicyHidden[profile]?.contains(pkg) == true
+
+	/** Enabled launcher entry from the last profile snapshot; null when no snapshot covers [profile]. */
+	fun snapshotLauncherEntry(profile: UserHandle, pkg: String): Boolean? = mLauncherEntries[profile]?.contains(pkg)
+
+	/** Records the outcome of a system app policy change, then re-reads the touched packages. */
+	fun applyPolicyResult(profile: UserHandle, available: Collection<String>, unavailable: Collection<String>) {
+		mPolicyHidden.compute(profile) { _, current -> (current.orEmpty() - available.toSet() + unavailable).toHashSet() }
+		(available + unavailable).forEach { pkg -> refreshPackage(pkg, profile, false) }
+	}
+
 	/** Freezing or disabling a critical app may cause malfunction to other apps or the whole system.  */
 	fun isCritical(pkg: String): Boolean {
 		return mCriticalSystemPackages.contains(pkg)
@@ -271,7 +287,8 @@ class PrismAppListProvider : AppListProvider<PrismAppInfo>() {
 
 	private val mPrismAppMap by lazy { initializeMonitor(); ArrayMap<UserHandle, MutableMap<String, PrismAppInfo>>() }
 	private val mLauncherApps by lazy { context().getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps }
-	private val mClonedHiddenSystemApps by lazy { ClonedHiddenSystemApps(context()) }
+	private val mPolicyHidden = ConcurrentHashMap<UserHandle, Set<String>>()
+	private val mLauncherEntries = ConcurrentHashMap<UserHandle, Set<String>>()
 	private val mCriticalSystemPackages by lazy { SystemAppsManager.detectCriticalSystemPackages(context().packageManager) }
 
 	companion object {
@@ -300,13 +317,18 @@ internal object MobileAppListPort : AppListPort {
         if (startLong >= apps.size) return ProfileAppPage(emptyList(), false)
         val start = startLong.toInt()
         val end = minOf(start + effectiveSize, apps.size)
+        // The policy is evaluated once per page, not per entry.
+        val policy = runCatching { SystemAppPolicyRuntime.listSnapshot(context) }.getOrElse { error ->
+            DiagnosticLog.w(TAG, "system app policy snapshot unavailable", error)
+            SystemAppListSnapshot.EMPTY
+        }
         return ProfileAppPage(
-            apps.subList(start, end).map { it.toProfileAppEntry(context) },
+            apps.subList(start, end).map { it.toProfileAppEntry(context, policy) },
             hasMore = end < apps.size,
         )
     }
 
-    private fun ApplicationInfo.toProfileAppEntry(context: Context): ProfileAppEntry {
+    private fun ApplicationInfo.toProfileAppEntry(context: Context, policy: SystemAppListSnapshot): ProfileAppEntry {
         val hidden = AppInfo.isHidden(this) ?: runCatching {
             !context.getSystemService(LauncherApps::class.java).isPackageEnabled(packageName, Users.current())
         }.getOrDefault(false)
@@ -322,6 +344,8 @@ internal object MobileAppListPort : AppListPort {
             sourceDir = sourceDir,
             publicSourceDir = publicSourceDir,
             splitSourceDirs = splitSourceDirs?.toList().orEmpty(),
+            launcherEntry = packageName in policy.enabledLauncherPackages,
+            policyHidden = packageName in policy.policyHidden,
         )
     }
 }

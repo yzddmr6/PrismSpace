@@ -74,22 +74,6 @@ data class EnsureAppFreeToLaunch(val packageName: String) : ProfileCommand<Strin
         requireNotNull(src.getString(RESULT)) { "Missing launch-readiness result for $id" }
 }
 
-@Parcelize
-data class MarkClonedSystemApp(val packageName: String) : ProfileCommand<Boolean> {
-    @IgnoredOnParcel
-    override val id = "app.mark_cloned_system"
-    override fun encodeResult(result: Boolean, out: Bundle) = out.putBoolean(RESULT, result)
-    override fun decodeResult(src: Bundle) = src.getBoolean(RESULT)
-}
-
-@Parcelize
-data class EnableSystemApp(val packageName: String) : ProfileCommand<Boolean> {
-    @IgnoredOnParcel
-    override val id = "app.enable_system"
-    override fun encodeResult(result: Boolean, out: Bundle) = out.putBoolean(RESULT, result)
-    override fun decodeResult(src: Bundle) = src.getBoolean(RESULT)
-}
-
 /** Single audit surface for stable wire identifiers and protocol tests. */
 object BridgeCommandCatalog {
     val all: List<BridgeCommand<*>> = listOf(
@@ -100,8 +84,6 @@ object BridgeCommandCatalog {
         SetPackagesSuspended(listOf("example"), true),
         SetPackagesFrozen(listOf("example"), true),
         EnsureAppFreeToLaunch("example"),
-        MarkClonedSystemApp("example"),
-        EnableSystemApp("example"),
     ) + FILE_BRIDGE_COMMAND_SAMPLES + SPACE_AND_SHORTCUT_COMMAND_SAMPLES + DIAGNOSTICS_COMMAND_SAMPLES +
         SYSTEM_APP_COMMAND_SAMPLES
 }

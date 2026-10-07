@@ -54,8 +54,8 @@ data class SelfTestResultDto(val bytes: ByteArray, val location: String) : Parce
  * Minimal profile-app snapshot consumed by PrismAppInfo/AppInfo and clone flows.
  *
  * Fields come from PrismAppInfo/AppInfo reads: package/uid/flags/hidden/enabled/target SDK for
- * state and permission policy; label/icon for rendering; APK paths for clone export. No complete
- * ApplicationInfo crosses Binder.
+ * state and permission policy; label/icon for rendering; APK paths for clone export; launcher entry
+ * and policy target for launchability and list rules. No complete ApplicationInfo crosses Binder.
  */
 @Parcelize
 data class ProfileAppEntry(
@@ -70,6 +70,10 @@ data class ProfileAppEntry(
     val sourceDir: String?,
     val publicSourceDir: String?,
     val splitSourceDirs: List<String>,
+    /** Has an enabled launcher activity in the profile (hidden packages included). */
+    val launcherEntry: Boolean = false,
+    /** The system app policy targets this package as unavailable ("not in this space"). */
+    val policyHidden: Boolean = false,
 ) : Parcelable
 
 @Parcelize

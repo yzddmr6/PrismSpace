@@ -1,5 +1,6 @@
 package com.yzddmr6.prismspace.shortcut
 
+import com.yzddmr6.prismspace.analytics.DiagnosticLog
 import android.app.Activity
 import android.app.ActivityManager
 import android.app.Service
@@ -282,7 +283,10 @@ object PrismAppShortcut {
 					return true.also { shuttleAndLaunch(activity, pkg, intent, profile, app.hidden) }
 
 				if (! app.hidden) la.get().run {    // Use LauncherApps to start non-frozen app within profile in Quiet Mode
-					val component = getActivityList(pkg, profile).getOrNull(0)?.componentName ?: return true
+					val component = getActivityList(pkg, profile).getOrNull(0)?.componentName ?: return true.also {
+						// Same verdict as the list: no enabled launcher entry means "no UI", said out loud.
+						DiagnosticLog.i(TAG, "launch_refused pkg=$pkg state=NoLauncherEntry")
+						Toasts.showLong(context, R.string.lz_app_no_launcher_entry) }
 					startMainActivity(component, profile, null, null)
 					return true }
 

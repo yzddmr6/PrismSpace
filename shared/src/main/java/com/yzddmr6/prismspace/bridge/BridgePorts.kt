@@ -13,8 +13,6 @@ interface AppControlPort {
     fun setPackagesSuspended(context: Context, packageNames: List<String>, suspended: Boolean): Array<String>
     fun setPackagesFrozen(context: Context, packageNames: List<String>, frozen: Boolean): Array<String>
     fun ensureAppFreeToLaunch(context: Context, packageName: String): String
-    fun markClonedSystemApp(context: Context, packageName: String): Boolean
-    fun enableSystemApp(context: Context, packageName: String): Boolean
 }
 
 interface FileBridgePort {

@@ -97,4 +97,29 @@
     <string name="lz_system_apps_empty_search_hint">请输入应用名称或包名。这里只搜索实际安装在双开空间内的系统包。</string>
     <string name="lz_system_apps_empty_result_title">没有匹配的系统应用</string>
     <string name="lz_system_apps_empty_result_hint">请尝试其他名称或包名片段。</string>
+
+    <!-- System app policy: selection page, membership actions, launchability -->
+    <string name="lz_sysapp_picker_title">选择要带入的系统应用</string>
+    <string name="lz_sysapp_picker_intro">双开空间已创建。勾选要在双开空间内使用的应用，之后可在「空间」页随时修改。</string>
+    <string name="lz_sysapp_picker_group_system">系统应用</string>
+    <string name="lz_sysapp_picker_group_system_hint">确认后直接在双开空间内启用，不复制安装包。</string>
+    <string name="lz_sysapp_picker_group_preinstalled">预装应用（需安装）</string>
+    <string name="lz_sysapp_picker_group_preinstalled_hint">会把安装包复制到双开空间，需在双开空间入口页由系统安装器确认安装。</string>
+    <string name="lz_sysapp_picker_needs_install">需安装</string>
+    <string name="lz_sysapp_picker_waiting">正在等待双开空间就绪…</string>
+    <string name="lz_sysapp_picker_unavailable">双开空间尚未就绪，可稍后在「空间」页的「添加系统应用」中设置。</string>
+    <string name="lz_sysapp_picker_later">稍后</string>
+    <string name="lz_sysapp_picker_confirm">确认</string>
+    <string name="lz_sysapp_picker_result">已启用 %1$d 个系统应用；%2$d 个预装应用待安装</string>
+    <string name="lz_sysapp_picker_result_issues">%1$d 个本机不存在，%2$d 个处理失败</string>
+    <string name="lz_space_add_system_apps">添加系统应用</string>
+    <string name="lz_space_menu_show_all_system">显示全部系统应用</string>
+    <string name="lz_vm_chip_no_ui">无界面</string>
+    <string name="lz_vm_chip_not_added">未添加</string>
+    <string name="lz_space_row_add">添加</string>
+    <string name="lz_app_add_system_to_space">添加到双开空间</string>
+    <string name="lz_app_remove_system_from_space">从双开空间移除</string>
+    <string name="lz_app_remove_system_from_space_subtitle">隐藏并停用，不删除数据，可随时再添加</string>
+    <string name="lz_app_no_launcher_entry">此应用没有桌面入口，无法直接打开</string>
+    <string name="lz_app_removed_system_from_space">已从双开空间移除 %1$s</string>
 </resources>

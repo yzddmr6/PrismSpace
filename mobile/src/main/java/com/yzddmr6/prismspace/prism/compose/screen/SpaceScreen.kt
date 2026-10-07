@@ -84,6 +84,7 @@ import com.yzddmr6.prismspace.prism.compose.component.PrismTextButton
 import com.yzddmr6.prismspace.prism.compose.component.SpaceSegmentChips
 import com.yzddmr6.prismspace.prism.compose.component.SuspendRecoveryDialog
 import com.yzddmr6.prismspace.prism.compose.nav.AppLaunchSignals
+import com.yzddmr6.prismspace.prism.compose.nav.SYSTEM_APP_PICKER_ORIGIN_SPACE
 import com.yzddmr6.prismspace.prism.compose.space.SpaceUsability
 import com.yzddmr6.prismspace.prism.compose.space.selectedDualChipId
 import com.yzddmr6.prismspace.prism.compose.space.spaceChips
@@ -284,6 +285,12 @@ fun SpaceScreen() {
                     vm.refresh()
                     viewPanelExpanded = false
                 },
+                onAddSystemApps = {
+                    viewPanelExpanded = false
+                    uiState.spaces.firstOrNull { it.id == uiState.selectedDualSpaceId }?.let { space ->
+                        AppLaunchSignals.signalOpenSystemAppPicker(space.userId, SYSTEM_APP_PICKER_ORIGIN_SPACE)
+                    }
+                },
             )
 
             uiState.refreshError?.let { message ->
@@ -319,6 +326,7 @@ fun SpaceScreen() {
                         when (action) {
                             SpaceRowAction.Open -> vm.launch(context, row.pkg, SpaceSegment.Dual)
                             SpaceRowAction.Resume -> vm.setFrozen(row.pkg, false)
+                            SpaceRowAction.AddSystemApp -> vm.setSystemAppInSpace(row.pkg, available = true)
                             SpaceRowAction.AddClone -> {
                                 // Same entry as the action sheet: confirm sheet follows the configured
                                 // method; the row button never skips it.
@@ -748,6 +756,7 @@ private fun SpaceToolbar(
     onCloneFilterSelected: (CloneFilter) -> Unit,
     onShowSystemToggled: () -> Unit,
     onRefresh: () -> Unit,
+    onAddSystemApps: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -860,6 +869,7 @@ private fun SpaceToolbar(
                     onCloneFilterSelected = onCloneFilterSelected,
                     onShowSystemToggled = onShowSystemToggled,
                     onRefresh = onRefresh,
+                    onAddSystemApps = onAddSystemApps,
                 )
                 }
             }
@@ -872,7 +882,7 @@ private fun SpaceToolbar(
 }
 
 // ---------------------------------------------------------------------------
-// View panel (排序方式 / 筛选〔主空间〕 / 显示系统应用 / 刷新) — the single entry
+// View panel (排序方式 / 筛选〔主空间〕 / 显示〔全部〕系统应用 / 添加系统应用〔双开〕 / 刷新) — the single entry
 // right of the search box. The top bar carries no ⋯ overflow menu anymore.
 // ---------------------------------------------------------------------------
 
@@ -888,6 +898,7 @@ private fun ViewPanel(
     onCloneFilterSelected: (CloneFilter) -> Unit,
     onShowSystemToggled: () -> Unit,
     onRefresh: () -> Unit,
+    onAddSystemApps: () -> Unit,
 ) {
     DropdownMenu(
         expanded = expanded,
@@ -929,13 +940,43 @@ private fun ViewPanel(
             )
         }
 
-        // 显示系统应用: dual lists launchable system apps; toggle defaults ON.
+        // Main: 显示系统应用 hides/shows system rows. Dual: system apps the policy keeps are normal rows
+        // already; 显示全部系统应用 merges in every installed system package. Both default OFF.
         androidx.compose.material.Divider(color = MaterialTheme.colorScheme.outlineVariant)
         MenuCheckItem(
-            label = stringResource(R.string.lz_space_menu_show_system),
+            label = stringResource(
+                if (segment == SpaceSegment.Dual) R.string.lz_space_menu_show_all_system else R.string.lz_space_menu_show_system,
+            ),
             checked = showSystem,
             onClick = onShowSystemToggled,
         )
+
+        // The toolbar is the single view-control entry and the dual list has no section header,
+        // so the system-app selection page hangs here.
+        if (segment == SpaceSegment.Dual) {
+            androidx.compose.material.Divider(color = MaterialTheme.colorScheme.outlineVariant)
+            DropdownMenuItem(
+                text = {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Icon(
+                            imageVector = PrismIcons.Add,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(
+                            text = stringResource(R.string.lz_space_add_system_apps),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                },
+                onClick = onAddSystemApps,
+            )
+        }
 
         androidx.compose.material.Divider(color = MaterialTheme.colorScheme.outlineVariant)
         DropdownMenuItem(
@@ -1107,6 +1148,7 @@ private fun AppCard(
                                 SpaceRowAction.Resume -> R.string.lz_space_row_resume
                                 SpaceRowAction.AddClone -> R.string.lz_space_row_add_clone
                                 SpaceRowAction.ContinueInstall -> R.string.lz_space_row_install
+                                SpaceRowAction.AddSystemApp -> R.string.lz_space_row_add
                             }
                         ),
                         fontWeight = FontWeight.SemiBold,

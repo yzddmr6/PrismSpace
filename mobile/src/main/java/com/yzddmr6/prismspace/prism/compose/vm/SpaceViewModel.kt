@@ -3,6 +3,7 @@ package com.yzddmr6.prismspace.prism.compose.vm
 import android.app.Activity
 import android.app.Application
 import android.content.Context
+import android.content.pm.LauncherApps
 import android.content.pm.PackageManager.MATCH_UNINSTALLED_PACKAGES
 import android.os.Build
 import android.os.SystemClock
@@ -16,7 +17,10 @@ import com.yzddmr6.prismspace.controller.CloneSuspendRecovery
 import com.yzddmr6.prismspace.controller.PrismAppClones
 import com.yzddmr6.prismspace.controller.PrismAppControl
 import com.yzddmr6.prismspace.controller.ClonePreparationStore
+import com.yzddmr6.prismspace.controller.SystemAppSelectionClient
 import com.yzddmr6.prismspace.controller.UserCloneRegistry
+import com.yzddmr6.prismspace.prism.service.ProfileBridgeResult
+import com.yzddmr6.prismspace.prism.service.profileBridgeFailureMessage
 import com.yzddmr6.prismspace.data.PrismAppListProvider
 import com.yzddmr6.prismspace.engine.LaunchResult
 import com.yzddmr6.prismspace.prism.compose.space.PrismSpace
@@ -75,10 +79,14 @@ internal data class SpaceAppInput(
     val userId: Int = 0,
     val iconVersion: String = "",
     val cloneStateKnown: Boolean = true,
+    /** Dual segment: the unified verdict; null derives it from [launchable] (main segment, tests). */
+    val launchability: AppLaunchability? = null,
+    /** Dual segment: a system package the space's policy keeps out ("not added"). */
+    val policyHidden: Boolean = false,
 )
 
 /** The row's single next-step action rendered as its inline button; null = no action row button. */
-enum class SpaceRowAction { Open, Resume, AddClone, ContinueInstall }
+enum class SpaceRowAction { Open, Resume, AddClone, ContinueInstall, AddSystemApp }
 
 /** The dual-segment freeze entry of the action sheet. */
 enum class DualFreezeAction { Freeze, Unfreeze, KeptAvailable }
@@ -113,23 +121,47 @@ data class SpaceRow(
     val userId: Int = 0,
     val iconVersion: String = "",
     val cloneStateKnown: Boolean = true,
+    val launchability: AppLaunchability = if (launchable) AppLaunchability.Launchable else AppLaunchability.NoLauncherEntry,
+    val policyHidden: Boolean = false,
 )
+
+/** What the dual-segment action sheet offers for a system package's membership in the space. */
+enum class SystemMembershipAction { Add, Remove, None }
+
+/** Critical packages are kept by PrismSpace; packages without a launcher entry are platform
+ *  components the policy never hides, so neither offers a removal. */
+fun systemMembershipAction(row: SpaceRow): SystemMembershipAction = when {
+    !row.system || row.segment != SpaceSegment.Dual -> SystemMembershipAction.None
+    row.policyHidden -> SystemMembershipAction.Add
+    row.critical || row.launchability == AppLaunchability.NoLauncherEntry -> SystemMembershipAction.None
+    else -> SystemMembershipAction.Remove
+}
 
 // ---------------------------------------------------------------------------
 // Pure mapper — the only business logic owned by this layer
 // Tag honesty: healthy rows carry NO tag; only exceptional states are labelled.
-//   Dual: system → "系统应用"; frozen/suspended → "已暂停"; healthy → no tag.
+//   Dual: 未添加 (policy-hidden) > 已暂停 > 无界面 > 系统应用; healthy user apps → no tag.
 //   Main: prepared → "待安装"; cloned / not-cloned → no tag (the row action carries state).
-// Inline action: dual → 打开/恢复; main → 添加分身/去安装; added or system rows → none.
+// Inline action: dual → 添加/恢复/打开 by the unified launchability, never keyed on "system";
+//   main → 添加分身/去安装; added rows → none.
 // ---------------------------------------------------------------------------
 
+/** Dual rows: [SpaceAppInput.launchability] when collected, else derived from the legacy flags. */
+internal fun dualLaunchability(app: SpaceAppInput): AppLaunchability = app.launchability
+    ?: resolveLaunchability(if (app.launchable) true else null, app.frozen, app.suspended)
+
 internal fun mapRows(inputs: List<SpaceAppInput>, res: StringResolver): List<SpaceRow> = inputs.map { app ->
+    val launchability = if (app.segment == SpaceSegment.Dual) dualLaunchability(app)
+        else if (app.launchable) AppLaunchability.Launchable else AppLaunchability.NoLauncherEntry
     val (chipText, chipOk) = when (app.segment) {
         SpaceSegment.Dual -> when {
-            app.system -> res(R.string.lz_vm_chip_system, emptyArray()) to false
+            // A policy-hidden package is hidden too; "not added" is the truthful state, not "paused".
+            app.policyHidden -> res(R.string.lz_vm_chip_not_added, emptyArray()) to false
             // Truthful badge: 已暂停 covers both freeze mechanisms and any lingering
             // suspended state, so a paused clone never reads as running.
             app.frozen || app.suspended -> res(R.string.lz_vm_chip_paused, emptyArray()) to false
+            launchability == AppLaunchability.NoLauncherEntry -> res(R.string.lz_vm_chip_no_ui, emptyArray()) to false
+            app.system -> res(R.string.lz_vm_chip_system, emptyArray()) to false
             else -> null to true
         }
         SpaceSegment.Main -> when {
@@ -139,10 +171,12 @@ internal fun mapRows(inputs: List<SpaceAppInput>, res: StringResolver): List<Spa
     }
     val primaryAction = when (app.segment) {
         SpaceSegment.Dual -> when {
-            app.system -> null
-            app.frozen || app.suspended -> SpaceRowAction.Resume
-            app.launchable -> SpaceRowAction.Open
-            else -> null
+            app.policyHidden -> SpaceRowAction.AddSystemApp
+            else -> when (launchability) {
+                AppLaunchability.Paused -> SpaceRowAction.Resume
+                AppLaunchability.Launchable -> SpaceRowAction.Open
+                AppLaunchability.NoLauncherEntry -> null
+            }
         }
         SpaceSegment.Main -> when {
             !app.cloneStateKnown -> null
@@ -156,7 +190,9 @@ internal fun mapRows(inputs: List<SpaceAppInput>, res: StringResolver): List<Spa
         label     = app.label,
         frozen    = app.frozen,
         suspended = app.suspended,
-        launchable = app.launchable,
+        // A paused package with an entry can still be launched (the sheet resumes it first).
+        launchable = if (app.segment == SpaceSegment.Dual) launchability != AppLaunchability.NoLauncherEntry && !app.policyHidden
+            else app.launchable,
         system    = app.system,
         cloned    = app.cloned,
         prepared  = app.prepared,
@@ -168,6 +204,8 @@ internal fun mapRows(inputs: List<SpaceAppInput>, res: StringResolver): List<Spa
         userId = app.userId,
         iconVersion = app.iconVersion,
         cloneStateKnown = app.cloneStateKnown,
+        launchability = launchability,
+        policyHidden = app.policyHidden,
     )
 }
 
@@ -201,7 +239,9 @@ enum class CloneFilter { All, Yes, No }
  * Pure client-side list transform: search → filter → sort.
  *
  * - search:      matches label OR packageName, case-insensitive; applied to both segments.
- * - showSystem:  hides system apps (row.system == true) when false.
+ * - showSystem:  MAIN segment hides system apps (row.system == true) when false. The DUAL segment
+ *                keeps policy-enabled system apps as normal rows; its toggle merges in every installed
+ *                system package upstream (see [mergeAllSystemRows]), so no filtering happens here.
  * - cloneFilter: All / Yes / No clone filter; MAIN segment only.
  * - sort Name:   localized name collation with package-name tie-breaker (both segments).
  * - sort Cloned: 已添加优先 — cloned-first (already-cloned at top), then name; MAIN segment only.
@@ -230,7 +270,7 @@ internal fun applyListTransform(
     }
 
     // 2a. System-app visibility belongs to the selected space.
-    if (!showSystem) result = result.filter { !it.system }
+    if (segment == SpaceSegment.Main && !showSystem) result = result.filter { !it.system }
     // 2b. Clone filter (main segment only)
     if (segment == SpaceSegment.Main) {
         result = when (cloneFilter) {
@@ -251,6 +291,16 @@ internal fun applyListTransform(
 
     return result
 }
+
+/** Dual「显示全部系统应用」: normal rows plus every installed system package, deduplicated by package. */
+internal fun mergeAllSystemRows(normal: List<SpaceAppInput>, system: List<SpaceAppInput>): List<SpaceAppInput> {
+    val seen = normal.mapTo(HashSet()) { it.pkg }
+    return normal + system.filter { seen.add(it.pkg) }
+}
+
+/** Dual segment: normal rows are user apps plus system apps the policy keeps that have a launcher entry. */
+internal fun isDualNormalRow(system: Boolean, shownAsEnabled: Boolean, policyHidden: Boolean, launchability: AppLaunchability): Boolean =
+    shownAsEnabled && (!system || (!policyHidden && launchability != AppLaunchability.NoLauncherEntry))
 
 // ---------------------------------------------------------------------------
 // UI state — one per segment
@@ -383,7 +433,7 @@ class SpaceViewModel(app: Application, private val savedState: SavedStateHandle)
         }
         viewModelScope.launch {
             spaceRepo.appChanges().collect { users ->
-                if (users.isNotEmpty()) reloads.request(SpaceReloadRequest(users))
+                if (users.isNotEmpty()) reloads.request(SpaceReloadRequest(users, reason = "callback"))
             }
         }
     }
@@ -444,7 +494,7 @@ class SpaceViewModel(app: Application, private val savedState: SavedStateHandle)
                 spaces.filter { request.users == null || it.userId in request.users || it.id !in previous }.forEach { space ->
                     if (space.kind == PrismSpaceKind.Main || spaceRepo.usabilityOf(space) == SpaceUsability.Usable) {
                         DiagnosticLog.d(TAG, "load app snapshot space=${space.id}")
-                        val apps = loadApps(space)
+                        val apps = loadApps(space, request.reason)
                         // Retire completed preparations only against a freshly read usable profile,
                         // never as a side effect of rendering a cached list or changing its filter.
                         if (space.kind == PrismSpaceKind.Dual) {
@@ -504,7 +554,7 @@ class SpaceViewModel(app: Application, private val savedState: SavedStateHandle)
                                     prepared = input.pkg in pending && input.pkg !in targetApps.orEmpty(),
                                     cloneStateKnown = target == null || targetApps != null,
                                 )
-                            } else apps.normal
+                            } else if (options.showSystem) mergeAllSystemRows(apps.normal, apps.system) else apps.normal
                             val segment = if (id == "main") SpaceSegment.Main else SpaceSegment.Dual
                             key to SpaceView(
                                 applyListTransform(mapRows(inputs, res), segment, options.query, options.sort,
@@ -798,13 +848,47 @@ class SpaceViewModel(app: Application, private val savedState: SavedStateHandle)
             viewModelScope.launch {
                 val usability = selectedDualUsability()
                 if (usability != SpaceUsability.Usable) return@launch blockUninstallWithGuidance(usability)
-                if (app.isSystem) PrismAppControl.requestRemoval(activity, app)
-                else startUninstallQueue(listOf(pkg), segment)
+                // System packages leave a space through the policy (setSystemAppInSpace), never an uninstall.
+                if (!app.isSystem) startUninstallQueue(listOf(pkg), segment)
             }
             return
         }
-        if (app.isSystem) PrismAppControl.requestRemoval(activity, app)
-        else startUninstallQueue(listOf(pkg), segment)
+        if (!app.isSystem) startUninstallQueue(listOf(pkg), segment)
+    }
+
+    /**
+     * 添加到双开空间 / 从双开空间移除 for a system package: one ApplySystemAppSelection through the
+     * profile-side policy. Only the reported result is shown; nothing is assumed on bridge failure.
+     */
+    fun setSystemAppInSpace(pkg: String, available: Boolean) {
+        val app = appFor(pkg, SpaceSegment.Dual) ?: return
+        if (!app.isSystem) return
+        if (!available && app.isCritical) {
+            reportTransientError(prismResolver(getApplication())(R.string.dialog_critical_app_kept_available, emptyArray()))
+            return
+        }
+        viewModelScope.launch {
+            val usability = selectedDualUsability()
+            if (usability != SpaceUsability.Usable) return@launch blockUninstallWithGuidance(usability)
+            val context: Context = getApplication()
+            val res = prismResolver(context)
+            val result = withContext(Dispatchers.IO) {
+                SystemAppSelectionClient.setAvailable(context, app.user.toId(), pkg, available)
+            }
+            val report = (result as? ProfileBridgeResult.Value)?.value
+            val label = app.label.toString()
+            when {
+                report == null -> setFeedback(profileBridgeFailureMessage(context, result,
+                    res(R.string.toast_cannot_clone, arrayOf(label))), isError = true)
+                available && pkg in report.available ->
+                    setFeedback(res(R.string.toast_successfully_cloned, arrayOf(label)), isError = false)
+                !available && pkg in report.unavailable ->
+                    setFeedback(res(R.string.lz_app_removed_system_from_space, arrayOf(label)), isError = false)
+                pkg in report.absent -> setFeedback(res(R.string.lz_sysapp_picker_result_issues, arrayOf(1, 0)), isError = true)
+                else -> setFeedback(res(R.string.lz_sysapp_picker_result_issues, arrayOf(0, 1)), isError = true)
+            }
+            reloads.request(SpaceReloadRequest(setOf(app.user.toId()), reason = "policy"))
+        }
     }
 
     fun onHostPaused() { uninstallHostResumed = false }
@@ -818,6 +902,10 @@ class SpaceViewModel(app: Application, private val savedState: SavedStateHandle)
             reloads.request(SpaceReloadRequest())
         }
         viewModelScope.launch { stateRepo.refresh("space_resumed") }
+        // Space facts are a data class StateFlow: an unchanged state never re-emits, so launchability
+        // (an app may toggle its own launcher entry while away) must be re-read explicitly.
+        val dualUsers = _uiState.value.spaces.filter { it.kind == PrismSpaceKind.Dual }.mapTo(HashSet()) { it.userId }
+        if (dualUsers.isNotEmpty()) reloads.request(SpaceReloadRequest(dualUsers, reason = "resume"))
     }
 
     private fun startUninstallQueue(pkgs: List<String>, segment: SpaceSegment) {
@@ -1031,24 +1119,37 @@ class SpaceViewModel(app: Application, private val savedState: SavedStateHandle)
     fun setSystemQuery(query: String) = updateBrowse { it.copy(systemQuery = query) }
 
     /** Immutable input values, collected from the existing repository off the UI thread. */
-    private fun loadApps(space: PrismSpace): SpaceApps {
+    private fun loadApps(space: PrismSpace, reason: String): SpaceApps {
         val context = PrismLocale.wrap(getApplication())
         val locale = PrismLocale.wrap(context).resources.configuration.locales[0].toLanguageTag()
         val apps = spaceRepo.installedApps(space).filter { it.isInstalled && it.packageName != context.packageName }
         val segment = if (space.kind == PrismSpaceKind.Main) SpaceSegment.Main else SpaceSegment.Dual
+        // One fresh LauncherApps read per load for visible dual-space packages (no static cache).
+        val launcherPackages = if (segment != SpaceSegment.Dual) null else runCatching {
+            getApplication<Application>().getSystemService(LauncherApps::class.java)!!
+                .getActivityList(null, UserHandles.of(space.userId)).mapTo(HashSet()) { it.componentName.packageName }
+        }.getOrNull()
+        if (segment == SpaceSegment.Dual)
+            DiagnosticLog.i(TAG, "launchability_refresh u=${space.userId} reason=$reason launcherPkgs=${launcherPackages?.size ?: -1}")
         val inputs = apps.associate { app ->
             val labelKey = "${space.id}:${app.packageName}:${app.sourceDir}:$locale"
             val label = labels.get(labelKey) ?: runCatching { app.loadLabel(context.packageManager).toString() }
                 .getOrDefault(app.packageName).ifBlank { app.packageName }.also { labels.put(labelKey, it) }
+            val launchability = if (segment == SpaceSegment.Dual)
+                resolveLaunchability(dualLauncherEntry(app, launcherPackages), app.isHidden, app.isSuspended) else null
             app.packageName to SpaceAppInput(
                 pkg = app.packageName, label = label, frozen = app.isHidden, suspended = app.isSuspended,
-                launchable = app.isLaunchable, system = app.isSystem, cloned = false, segment = segment,
+                launchable = launchability?.let { it != AppLaunchability.NoLauncherEntry } ?: app.isLaunchable,
+                system = app.isSystem, cloned = false, segment = segment,
                 critical = app.isCritical, userId = space.userId, iconVersion = app.sourceDir.orEmpty(),
+                launchability = launchability,
+                policyHidden = segment == SpaceSegment.Dual && app.isHiddenSysPrismAppTreatedAsDisabled,
             )
         }
         val normal = apps.filter { app ->
-            if (segment == SpaceSegment.Main) app.enabled else app.shouldShowAsEnabled() &&
-                (!app.isSystem || UserCloneRegistry.contains(context, app.packageName) || inputs.getValue(app.packageName).launchable)
+            if (segment == SpaceSegment.Main) app.enabled else inputs.getValue(app.packageName).let { input ->
+                isDualNormalRow(input.system, app.shouldShowAsEnabled(), input.policyHidden, input.launchability!!)
+            }
         }.map { inputs.getValue(it.packageName) }
         return SpaceApps(apps.associateBy { it.packageName }, normal, inputs.values.filter { it.system })
     }

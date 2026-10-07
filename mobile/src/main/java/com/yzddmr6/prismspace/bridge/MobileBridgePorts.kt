@@ -2,12 +2,10 @@ package com.yzddmr6.prismspace.bridge
 
 import android.content.Context
 import com.yzddmr6.prismspace.controller.PrismAppControl
-import com.yzddmr6.prismspace.engine.ClonedHiddenSystemApps
 import com.yzddmr6.prismspace.engine.PrismManager
 import com.yzddmr6.prismspace.data.MobileAppListPort
 import com.yzddmr6.prismspace.prism.service.MobileFileBridgePort
 import com.yzddmr6.prismspace.shortcut.MobileShortcutPort
-import com.yzddmr6.prismspace.util.DevicePolicies
 import com.yzddmr6.prismspace.util.PseudoContentProvider
 
 internal object MobileAppControlPort : AppControlPort {
@@ -34,12 +32,6 @@ internal object MobileAppControlPort : AppControlPort {
 
     override fun ensureAppFreeToLaunch(context: Context, packageName: String) =
         PrismManager.ensureAppFreeToLaunch(context, packageName)
-
-    override fun markClonedSystemApp(context: Context, packageName: String) =
-        ClonedHiddenSystemApps.setCloned(context, packageName)
-
-    override fun enableSystemApp(context: Context, packageName: String) =
-        DevicePolicies(context).enableSystemApp(packageName)
 }
 
 class MobileBridgePortsProvider : PseudoContentProvider() {

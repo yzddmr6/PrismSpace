@@ -27,8 +27,6 @@ internal object BridgeDispatcher {
                 setPackagesFrozen(context, command.packageNames, command.frozen)
             }
             is EnsureAppFreeToLaunch -> appControl(command) { ensureAppFreeToLaunch(context, command.packageName) }
-            is MarkClonedSystemApp -> appControl(command) { markClonedSystemApp(context, command.packageName) }
-            is EnableSystemApp -> appControl(command) { enableSystemApp(context, command.packageName) }
             is OpenWriteSession -> fileBridge(command) {
                 openWriteSession(context, command.store, command.safeName, command.mimeType, command.relativePath)
             }

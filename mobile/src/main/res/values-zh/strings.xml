@@ -71,13 +71,11 @@
     <string name="dialog_title_warning">注意</string>
     <string name="dialog_reactivate_message">双开空间入口被意外关闭，请再次授予设备管理权限以重新开启。</string>
     <string name="dialog_cannot_destroy_message">如果要删除整个双开空间，请打开系统设置 -（用户和）账号，点选“移除工作资料”。</string>
-    <string name="dialog_critical_app_warning">这个应用（或组件）可能对于 Android 系统或其它应用的正常运作至关重要。如果继续此操作，部分应用甚至整个系统可能因此变得不稳定或无法正常运作。\n\n确认继续？</string>
     <string name="dialog_critical_app_kept_available">该系统组件由 PrismSpace 保持可用，以保证安装、文件与设置流程正常，无法暂停。</string>
     <string name="dialog_space_setup_failed">抱歉，创建双开空间时出现了异常。（阶段 %1$d）</string>
 
     <string name="action_continue">继续</string>
 
-    <string name="prompt_disable_sys_app_as_removal">系统应用（或组件）只能被停用，与卸载安装的应用效果相似。\n\n由于没有权限直接停用应用，接下来即将打开系统的应用设置界面，届时请点击“停用”按钮。</string>
     <string name="toast_enable_disabled_system_app">请重新启用此分身</string>
 
     <string name="toast_successfully_cloned">%1$s 已完成分身</string>

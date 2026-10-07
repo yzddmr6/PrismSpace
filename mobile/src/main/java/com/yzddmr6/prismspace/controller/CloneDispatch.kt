@@ -1,5 +1,7 @@
 package com.yzddmr6.prismspace.controller
 
+import com.yzddmr6.prismspace.prism.compose.vm.PrismMode
+
 /**
  * Single source of truth for which rung of PrismAppClones.cloneApp() fires.
  * [installerUsable] and [shizukuPermissionGranted] are lazy so unavailable paths do
@@ -24,6 +26,14 @@ data class CloneRoutePlan(
  * The package-scheme installer route is unreachable for user apps under Android 16 managed
  * profiles, so normal mode uses file sync and foreground user confirmation instead.
  */
+/** Batch clone method: the configured one, or normal preparation when the caller forbids privileged installs. */
+fun batchCloneMode(preferred: PrismMode, forceNormalPreparation: Boolean): Int = when {
+	forceNormalPreparation -> PrismAppClones.MODE_INSTALLER
+	preferred == PrismMode.Root -> PrismAppClones.MODE_ROOT
+	preferred == PrismMode.Shizuku -> PrismAppClones.MODE_SHIZUKU
+	else -> PrismAppClones.MODE_INSTALLER
+}
+
 fun planCloneRoute(
 	isParentProfileTarget: Boolean,
 	isSourceSystemApp: Boolean,

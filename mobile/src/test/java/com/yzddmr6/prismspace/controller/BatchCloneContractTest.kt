@@ -1,6 +1,8 @@
 package com.yzddmr6.prismspace.controller
 
 import java.io.File
+import com.yzddmr6.prismspace.prism.compose.vm.PrismMode
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -36,6 +38,23 @@ class BatchCloneContractTest {
         val interactive = source.substringAfter("fun cloneViaFileSync").substringBefore("private fun feedback")
         assertFalse(interactive.contains("allowActivationRetry = false"))
         assertTrue(interactive.contains("prompt_activating_space"))
+    }
+
+    @Test fun forcedNormalPreparationNeverInstallsSilentlyUnderRootOrShizuku() {
+        // The selection page's preinstalled group: Root/Shizuku may be configured and ready, yet the
+        // route must stay the user-confirmed FILE_SYNC preparation (BatchCloneResult.Prepared).
+        val ready = CloneRuntimeReadiness(shizukuReady = true, rootReady = true)
+        for (preferred in PrismMode.values()) {
+            val mode = batchCloneMode(preferred, forceNormalPreparation = true)
+            assertEquals(PrismAppClones.MODE_INSTALLER, mode)
+            assertEquals(CloneRoute.FILE_SYNC, planCloneRoute(false, false, mode, { true }, ready).route)
+        }
+        assertEquals(CloneRoute.ROOT, planCloneRoute(false, false, batchCloneMode(PrismMode.Root, false), { true }, ready).route)
+        assertEquals(CloneRoute.SHIZUKU, planCloneRoute(false, false, batchCloneMode(PrismMode.Shizuku, false), { true }, ready).route)
+
+        val batch = requestForBatchSource()
+        assertTrue(batch.contains("batchCloneMode(runtime.preferredMode, forceNormalPreparation)"))
+        assertTrue(batch.contains("result.success -> BatchCloneResult.Prepared"))
     }
 
     private fun requestForBatchSource(): String =

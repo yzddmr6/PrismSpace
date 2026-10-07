@@ -22,10 +22,13 @@ internal data class SpaceReloadRequest(
     /** Null means all spaces; otherwise reload only these Android users. */
     val users: Set<Int>? = null,
     val checkSpaceFacts: Boolean = false,
+    /** Diagnostics only: why the snapshot is re-read (load/resume/callback/policy). */
+    val reason: String = "load",
 ) {
     fun merge(other: SpaceReloadRequest) = SpaceReloadRequest(
         users = if (users == null || other.users == null) null else users + other.users,
         checkSpaceFacts = checkSpaceFacts || other.checkSpaceFacts,
+        reason = (reason.split('+') + other.reason.split('+')).distinct().joinToString("+"),
     )
 }
 

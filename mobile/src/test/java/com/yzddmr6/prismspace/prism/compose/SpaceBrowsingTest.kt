@@ -95,6 +95,21 @@ class SpaceBrowsingTest {
         assertEquals(SpaceReloadRequest(null, true), SpaceReloadRequest(null,true).merge(SpaceReloadRequest(setOf(0))))
     }
 
+    @Test fun reloadReasonsAreMergedForDiagnostics() {
+        val merged = SpaceReloadRequest(setOf(22), reason = "resume")
+            .merge(SpaceReloadRequest(setOf(22), reason = "callback"))
+            .merge(SpaceReloadRequest(setOf(22), reason = "resume"))
+        assertEquals(setOf(22), merged.users)
+        assertEquals("resume+callback", merged.reason)
+        assertEquals("load", SpaceReloadRequest().merge(SpaceReloadRequest()).reason)
+    }
+
+    @Test fun showAllSystemAppsDefaultsOffForEverySpace() {
+        // The dual list already carries policy-enabled system apps (with Open); the extra
+        // "show all system apps" view stays opt-in, matching the corrected SpaceScreen comment.
+        assertEquals(false, SpaceBrowseOptions().showSystem)
+    }
+
     private fun row(pkg: String, label: String) = SpaceRow(pkg, label, false, false, true, false, false, false, SpaceSegment.Main, null, false)
     private fun transform(rows: List<SpaceRow>) = applyListTransform(rows, SpaceSegment.Main, "", SortOrder.Name, CloneFilter.All, false, Locale.CHINA)
 }

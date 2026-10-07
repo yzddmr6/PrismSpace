@@ -38,8 +38,11 @@ import com.yzddmr6.prismspace.prism.compose.vm.SpaceViewModel
 import com.yzddmr6.prismspace.prism.compose.vm.ActionFeedback
 import com.yzddmr6.prismspace.prism.compose.vm.AppFeedbackBus
 import com.yzddmr6.prismspace.prism.compose.vm.SpaceActionGate
+import com.yzddmr6.prismspace.prism.compose.vm.AppLaunchability
 import com.yzddmr6.prismspace.prism.compose.vm.DualFreezeAction
+import com.yzddmr6.prismspace.prism.compose.vm.SystemMembershipAction
 import com.yzddmr6.prismspace.prism.compose.vm.dualFreezeAction
+import com.yzddmr6.prismspace.prism.compose.vm.systemMembershipAction
 import com.yzddmr6.prismspace.prism.service.FileBridgeService
 import com.yzddmr6.prismspace.prism.ui.PrismAppsViewModel
 import com.yzddmr6.prismspace.shortcut.PrismAppShortcut
@@ -49,10 +52,11 @@ import kotlinx.coroutines.launch
  * Bottom-sheet action drawer for the Space screen.
  *
  * Dual segment:
- *   启动应用 → vm.launch
- *   冻结/解冻 → vm.setFrozen
+ *   启动应用 → vm.launch (same launchability verdict as the row; 无界面 explains a missing entry)
+ *   冻结/解冻 → vm.setFrozen (not for policy-hidden rows: resuming would bypass the policy)
  *   应用信息 → vm.openSystemSettings
- *   卸载分身 (danger) → vm.remove, gated by [uninstallEntry] on dual-space usability
+ *   系统应用: 添加到双开空间 / 从双开空间移除 → vm.setSystemAppInSpace (policy-routed)
+ *   卸载分身 (danger, user apps) → vm.remove, gated by [uninstallEntry] on dual-space usability
  *
  * Main segment:
  *   打开应用设置 → vm.openSystemSettings
@@ -124,7 +128,16 @@ fun AppActionSheet(
                     }
                 }
 
-                when (dualFreezeAction(row)) {
+                if (row.launchability == AppLaunchability.NoLauncherEntry && !row.policyHidden) {
+                    SheetAction(
+                        icon = PrismIcons.Info,
+                        title = stringResource(R.string.lz_vm_chip_no_ui),
+                        subtitle = stringResource(R.string.lz_app_no_launcher_entry),
+                        enabled = false,
+                    ) {}
+                }
+
+                if (!row.policyHidden) when (dualFreezeAction(row)) {
                     // Critical packages are kept available by PrismSpace: no freeze action, only the reason.
                     DualFreezeAction.KeptAvailable -> SheetAction(
                         icon = PrismIcons.Info,
@@ -153,7 +166,8 @@ fun AppActionSheet(
                     }
                 }
 
-                SheetAction(
+                // App info unhides first; for a policy-hidden package that would bypass the policy.
+                if (!row.policyHidden) SheetAction(
                     icon = PrismIcons.Gear,
                     title = stringResource(R.string.lz_app_app_info),
                 ) {
@@ -161,7 +175,28 @@ fun AppActionSheet(
                     vm.openSystemSettings(row.pkg, SpaceSegment.Dual)
                 }
 
-                SheetAction(
+                when (systemMembershipAction(row)) {
+                    SystemMembershipAction.Add -> SheetAction(
+                        icon = PrismIcons.Add,
+                        title = stringResource(R.string.lz_app_add_system_to_space),
+                    ) {
+                        dismiss()
+                        vm.setSystemAppInSpace(row.pkg, available = true)
+                    }
+                    SystemMembershipAction.Remove -> SheetAction(
+                        icon = PrismIcons.Trash,
+                        title = stringResource(R.string.lz_app_remove_system_from_space),
+                        subtitle = stringResource(R.string.lz_app_remove_system_from_space_subtitle),
+                        danger = true,
+                    ) {
+                        dismiss()
+                        vm.setSystemAppInSpace(row.pkg, available = false)
+                    }
+                    SystemMembershipAction.None -> Unit
+                }
+
+                // System packages leave the space through the policy above, never through an uninstall.
+                if (!row.system) SheetAction(
                     icon = PrismIcons.Trash,
                     title = stringResource(R.string.lz_app_uninstall_clone),
                     subtitle = if (uninstallEntry.enabled) null else uninstallEntry.guidance,

@@ -1,5 +1,8 @@
 package com.yzddmr6.prismspace.prism.compose
 
+import com.yzddmr6.prismspace.prism.compose.vm.AppLaunchability
+import com.yzddmr6.prismspace.prism.compose.vm.isDualNormalRow
+import com.yzddmr6.prismspace.prism.compose.vm.mergeAllSystemRows
 import com.yzddmr6.prismspace.prism.compose.vm.CloneFilter
 import com.yzddmr6.prismspace.prism.compose.vm.SortOrder
 import com.yzddmr6.prismspace.prism.compose.vm.SpaceAppInput
@@ -9,6 +12,7 @@ import com.yzddmr6.prismspace.prism.compose.vm.applyListTransform
 import com.yzddmr6.prismspace.prism.compose.vm.filterSystemAppRows
 import com.yzddmr6.prismspace.prism.compose.vm.mapRows
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -172,31 +176,48 @@ class SpaceFilterSortTest {
     }
 
     @Test
-    fun `showSystem filter applied for dual segment too`() {
-        // The dual segment honours its own «显示系统应用» toggle. Both segments default ON, while OFF
-        // still hides launchable system apps for the current segment.
-        val dualWithSystem = dualRows + makeRow("com.android.system", "System", system = true, segment = SpaceSegment.Dual)
-        val hidden = applyListTransform(
-            rows = dualWithSystem,
-            segment = SpaceSegment.Dual,
-            query = "",
-            sort = SortOrder.Name,
-            cloneFilter = CloneFilter.All,
-            showSystem = false,
-        )
-        assertTrue(hidden.none { it.system })
-        assertEquals(dualRows.size, hidden.size)
-
-        val shown = applyListTransform(
-            rows = dualWithSystem,
-            segment = SpaceSegment.Dual,
-            query = "",
-            sort = SortOrder.Name,
-            cloneFilter = CloneFilter.All,
-            showSystem = true,
-        )
-        assertEquals(dualWithSystem.size, shown.size)
+    fun `dual segment keeps policy-enabled system rows regardless of the toggle`() {
+        // Dual: system apps the policy keeps (e.g. Settings) are normal rows; the 显示全部系统应用
+        // toggle merges in the rest upstream (mergeAllSystemRows), so this transform never drops them.
+        val dualWithSystem = dualRows + makeRow("com.android.settings", "设置", system = true, segment = SpaceSegment.Dual)
+        for (toggle in listOf(false, true)) {
+            val result = applyListTransform(
+                rows = dualWithSystem,
+                segment = SpaceSegment.Dual,
+                query = "",
+                sort = SortOrder.Name,
+                cloneFilter = CloneFilter.All,
+                showSystem = toggle,
+            )
+            assertEquals(dualWithSystem.size, result.size)
+            assertTrue(result.any { it.pkg == "com.android.settings" })
+        }
     }
+
+    @Test
+    fun `dual show-all merges every installed system package once`() {
+        val normal = listOf(input("com.user"), input("com.android.settings", system = true))
+        val system = listOf(input("com.android.settings", system = true), input("com.miuix.editor", system = true),
+            input("com.android.camera", system = true, policyHidden = true))
+        val merged = mergeAllSystemRows(normal, system)
+        assertEquals(listOf("com.user", "com.android.settings", "com.miuix.editor", "com.android.camera"), merged.map { it.pkg })
+        assertEquals(normal, mergeAllSystemRows(normal, emptyList()))
+    }
+
+    @Test
+    fun `dual normal rows are user apps plus kept system apps with a launcher entry`() {
+        assertTrue(isDualNormalRow(system = false, shownAsEnabled = true, policyHidden = false, launchability = AppLaunchability.NoLauncherEntry))
+        assertTrue(isDualNormalRow(system = true, shownAsEnabled = true, policyHidden = false, launchability = AppLaunchability.Launchable))
+        assertTrue(isDualNormalRow(system = true, shownAsEnabled = true, policyHidden = false, launchability = AppLaunchability.Paused))
+        assertFalse(isDualNormalRow(system = true, shownAsEnabled = false, policyHidden = true, launchability = AppLaunchability.Paused))
+        assertFalse(isDualNormalRow(system = true, shownAsEnabled = true, policyHidden = false, launchability = AppLaunchability.NoLauncherEntry))
+        assertFalse(isDualNormalRow(system = false, shownAsEnabled = false, policyHidden = false, launchability = AppLaunchability.Launchable))
+    }
+
+    private fun input(pkg: String, system: Boolean = false, policyHidden: Boolean = false) = SpaceAppInput(
+        pkg = pkg, label = pkg, frozen = policyHidden, suspended = policyHidden, launchable = true, system = system,
+        cloned = false, segment = SpaceSegment.Dual, policyHidden = policyHidden,
+    )
 
     // -----------------------------------------------------------------------
     // Filter: cloneFilter (main segment only)
@@ -321,17 +342,16 @@ class SpaceFilterSortTest {
     // -----------------------------------------------------------------------
 
     @Test
-    fun `dual segment ignores cloneFilter but honours showSystem`() {
+    fun `dual segment ignores cloneFilter and the main-only system filter`() {
         val rowsWithSystem = dualRows + makeRow("com.sys", "Sys", system = true, segment = SpaceSegment.Dual)
         val result = applyListTransform(
             rows = rowsWithSystem,
             segment = SpaceSegment.Dual,
             query = "",
             sort = SortOrder.Name,
-            cloneFilter = CloneFilter.Yes,   // #1: cloneFilter stays main-only → ignored for dual
-            showSystem = false,              // #1: showSystem now applies to dual → system row hidden
+            cloneFilter = CloneFilter.Yes,   // cloneFilter stays main-only → ignored for dual
+            showSystem = false,              // dual system rows are chosen upstream, not filtered here
         )
-        assertTrue(result.none { it.system })    // showSystem honoured (system removed)
-        assertEquals(dualRows.size, result.size) // cloneFilter ignored → all non-system dual rows kept
+        assertEquals(rowsWithSystem.size, result.size)
     }
 }

@@ -36,4 +36,12 @@ object AppLaunchSignals {
     private val _openSpaceSystemApps = MutableStateFlow(0)
     val openSpaceSystemApps: StateFlow<Int> = _openSpaceSystemApps
     fun signalOpenSpaceSystemApps() { _openSpaceSystemApps.value += 1 }
+
+    // Space screen「添加系统应用」→ the system-app selection page (PrismNavHost navigates).
+    data class SystemAppPickerRequest(val nonce: Int, val userId: Int, val origin: String)
+    private val _openSystemAppPicker = MutableStateFlow<SystemAppPickerRequest?>(null)
+    val openSystemAppPicker: StateFlow<SystemAppPickerRequest?> = _openSystemAppPicker
+    fun signalOpenSystemAppPicker(userId: Int, origin: String) {
+        _openSystemAppPicker.value = SystemAppPickerRequest((_openSystemAppPicker.value?.nonce ?: 0) + 1, userId, origin)
+    }
 }

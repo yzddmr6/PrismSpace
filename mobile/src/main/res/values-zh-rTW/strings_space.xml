@@ -71,4 +71,29 @@
     <string name="lz_install_gate_bridge">請先在設定中修復雙開空間連線，然後再繼續安裝</string>
     <string name="lz_install_gate_missing">請先建立雙開空間，然後再繼續安裝</string>
     <string name="lz_install_gate_unknown">請先在設定中修復雙開空間，然後再繼續安裝</string>
+
+    <!-- System app policy: selection page, membership actions, launchability -->
+    <string name="lz_sysapp_picker_title">選擇要帶入的系統應用程式</string>
+    <string name="lz_sysapp_picker_intro">雙開空間已建立。勾選要在雙開空間內使用的應用程式，之後可在「空間」頁隨時修改。</string>
+    <string name="lz_sysapp_picker_group_system">系統應用程式</string>
+    <string name="lz_sysapp_picker_group_system_hint">確認後直接在雙開空間內啟用，不複製安裝套件。</string>
+    <string name="lz_sysapp_picker_group_preinstalled">預裝應用程式（需安裝）</string>
+    <string name="lz_sysapp_picker_group_preinstalled_hint">會把安裝套件複製到雙開空間，需在雙開空間入口頁由系統安裝程式確認安裝。</string>
+    <string name="lz_sysapp_picker_needs_install">需安裝</string>
+    <string name="lz_sysapp_picker_waiting">正在等待雙開空間就緒…</string>
+    <string name="lz_sysapp_picker_unavailable">雙開空間尚未就緒，可稍後在「空間」頁的「新增系統應用程式」中設定。</string>
+    <string name="lz_sysapp_picker_later">稍後</string>
+    <string name="lz_sysapp_picker_confirm">確認</string>
+    <string name="lz_sysapp_picker_result">已啟用 %1$d 個系統應用程式；%2$d 個預裝應用程式待安裝</string>
+    <string name="lz_sysapp_picker_result_issues">%1$d 個本機不存在，%2$d 個處理失敗</string>
+    <string name="lz_space_add_system_apps">新增系統應用程式</string>
+    <string name="lz_space_menu_show_all_system">顯示全部系統應用程式</string>
+    <string name="lz_vm_chip_no_ui">無介面</string>
+    <string name="lz_vm_chip_not_added">未新增</string>
+    <string name="lz_space_row_add">新增</string>
+    <string name="lz_app_add_system_to_space">新增到雙開空間</string>
+    <string name="lz_app_remove_system_from_space">從雙開空間移除</string>
+    <string name="lz_app_remove_system_from_space_subtitle">隱藏並停用，不刪除資料，可隨時再新增</string>
+    <string name="lz_app_no_launcher_entry">此應用程式沒有桌面入口，無法直接開啟</string>
+    <string name="lz_app_removed_system_from_space">已從雙開空間移除 %1$s</string>
 </resources>

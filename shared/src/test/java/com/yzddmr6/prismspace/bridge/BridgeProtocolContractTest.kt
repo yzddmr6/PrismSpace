@@ -137,8 +137,6 @@ class BridgeProtocolContractTest {
             frozen: Boolean,
         ) = emptyArray<String>()
         override fun ensureAppFreeToLaunch(context: Context, packageName: String) = ""
-        override fun markClonedSystemApp(context: Context, packageName: String) = true
-        override fun enableSystemApp(context: Context, packageName: String) = true
     }
 
     private object FakeFileBridgePort : FileBridgePort {
