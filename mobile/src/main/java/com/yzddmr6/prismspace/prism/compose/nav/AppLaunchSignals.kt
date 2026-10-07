@@ -38,10 +38,11 @@ object AppLaunchSignals {
     fun signalOpenSpaceSystemApps() { _openSpaceSystemApps.value += 1 }
 
     // Space screen「添加系统应用」→ the system-app selection page (PrismNavHost navigates).
-    data class SystemAppPickerRequest(val nonce: Int, val userId: Int, val origin: String)
-    private val _openSystemAppPicker = MutableStateFlow<SystemAppPickerRequest?>(null)
-    val openSystemAppPicker: StateFlow<SystemAppPickerRequest?> = _openSystemAppPicker
+    // One-shot: a recreated Activity must never replay an old request (device 9.6 crash / stale space).
+    data class SystemAppPickerRequest(val userId: Int, val origin: String)
+    private val openSystemAppPickerSignal = OneShotSignal<SystemAppPickerRequest>()
+    val openSystemAppPicker: Flow<SystemAppPickerRequest> = openSystemAppPickerSignal.requests
     fun signalOpenSystemAppPicker(userId: Int, origin: String) {
-        _openSystemAppPicker.value = SystemAppPickerRequest((_openSystemAppPicker.value?.nonce ?: 0) + 1, userId, origin)
+        openSystemAppPickerSignal.emit(SystemAppPickerRequest(userId, origin))
     }
 }

@@ -40,8 +40,11 @@ import com.yzddmr6.prismspace.prism.compose.vm.SystemAppPickerViewModel
 import com.yzddmr6.prismspace.prism.service.ProfileBridgeResult
 import com.yzddmr6.prismspace.provisioning.SelectionStatus
 import com.yzddmr6.prismspace.space.SpaceState
+import com.yzddmr6.prismspace.util.Users
+import com.yzddmr6.prismspace.util.Users.Companion.toId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.withContext
 
 /**
@@ -73,6 +76,20 @@ private suspend fun awaitUsableSpace(context: android.content.Context, userId: I
     return null
 }
 
+/** A managed space PrismSpace owns right now (never a deleted or foreign profile). */
+private fun isManagedSpace(userId: Int): Boolean = runCatching {
+    Users.getProfilesManagedByPrism().any { it.toId() == userId }
+}.getOrDefault(false)
+
+/** Navigation before NavHost has set the graph throws; effects can run first after a recreation. */
+private suspend fun awaitGraph(navController: NavHostController) {
+    repeat(GRAPH_WAIT_FRAMES) {
+        if (runCatching { navController.graph }.isSuccess) return
+        delay(16)
+    }
+}
+
+private const val GRAPH_WAIT_FRAMES = 120
 private const val SPACE_WAIT_ATTEMPTS = 14
 private const val SPACE_WAIT_POLL_MS = 1_500L
 
@@ -101,13 +118,13 @@ fun PrismNavHost(navController: NavHostController) {
         }
     }
     LaunchedEffect(navController) {
-        // Space screen「添加系统应用」→ the system-app selection page.
-        var lastNonce = 0
+        // Space screen「添加系统应用」→ the system-app selection page. Each request is consumed once;
+        // it is dropped when its space no longer belongs to PrismSpace.
         AppLaunchSignals.openSystemAppPicker.collect { request ->
-            if (request != null && request.nonce != lastNonce) {
-                lastNonce = request.nonce
+            if (isManagedSpace(request.userId)) {
+                awaitGraph(navController)
                 navController.openSystemAppPicker(request.userId, request.origin)
-            }
+            } else DiagnosticLog.i("Prism.SysAppPicker", "picker_request_dropped u=${request.userId} reason=not_managed")
         }
     }
     val context = LocalContext.current
@@ -118,6 +135,7 @@ fun PrismNavHost(navController: NavHostController) {
             val userId = awaitUsableSpace(context, expectation.userId) ?: return@collect   // Keep the mark; retry next start.
             when (val status = withContext(Dispatchers.IO) { SystemAppSelectionClient.readStatus(context, userId) }) {
                 is ProfileBridgeResult.Value -> if (status.value == SelectionStatus.Pending) {
+                    awaitGraph(navController)
                     navController.openSystemAppPicker(userId, SYSTEM_APP_PICKER_ORIGIN_SETUP)
                 } else SystemAppPickerPrompt.clear(context)
                 else -> DiagnosticLog.i("Prism.SysAppPicker", "picker_not_ready u=$userId usability=bridge:${status.javaClass.simpleName}")
@@ -127,8 +145,13 @@ fun PrismNavHost(navController: NavHostController) {
     LaunchedEffect(navController) {
         // Settings「系统应用」→ switch to the Space tab; the screen itself opens the system-apps
         // view off the same nonce.
-        AppLaunchSignals.openSpaceSystemApps.collect { nonce ->
-            if (nonce > 0) navController.navigateToTab(PrismRoutes.SPACE)
+        // drop(1): the nonce already present when this (possibly recreated) host starts was handled
+        // by an earlier host; replaying it would navigate again, possibly before the graph is set.
+        AppLaunchSignals.openSpaceSystemApps.drop(1).collect { nonce ->
+            if (nonce > 0) {
+                awaitGraph(navController)
+                navController.navigateToTab(PrismRoutes.SPACE)
+            }
         }
     }
 
