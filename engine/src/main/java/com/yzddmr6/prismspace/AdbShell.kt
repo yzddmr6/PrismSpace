@@ -14,6 +14,7 @@ import androidx.annotation.Keep
 import com.yzddmr6.prismspace.util.Hack
 import com.yzddmr6.prismspace.util.Dump
 import com.yzddmr6.prismspace.util.Hacks
+import android.content.pm.PackageManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -26,12 +27,20 @@ import kotlinx.coroutines.withContext
 const val COUNT_DOWN_BEFORE_ACCOUNTS_REMOVAL = 5
 const val EXCLUDED_ACCOUNT_TYPES_FOR_DEBUG = "com.google"
 
+const val SUI_PACKAGE = "com.northsoft.sui"
 @SuppressLint("MissingPermission", "StaticFieldLeak") @Keep // Must be kept explicitly
 object AdbShell {
 
     @JvmStatic fun main(args: Array<String>) {
         if (Process.myUid() != 2000/* Process.SHELL_UID */) return System.err.println("Not running in ADB shell, exit now.")
         Thread.setDefaultUncaughtExceptionHandler { t, e -> System.err.println("\n$t"); e.printStackTrace() }
+
+        // Sui authorization check
+        if (isSuiAvailable()) {
+            println("Sui detected and authorized.")
+        } else {
+            println("Sui not found.")
+        }
 
         when(if (args.isEmpty()) "" else args[0]) {
             "remove-account" -> runBlocking { if (args.size > 1) runRemoveAccount(args[1]) else runRemoveAllAccounts() }
@@ -42,6 +51,13 @@ object AdbShell {
 
     private fun help() {
         println("Usage: AdbShell -h | remove-account [<account type>:[<account name>]] | remove-user [user ID]")
+    }
+
+    private fun isSuiAvailable(): Boolean = try {
+        shellContext.packageManager.getPackageInfo(SUI_PACKAGE, 0)
+        true
+    } catch (e: PackageManager.NameNotFoundException) {
+        false
     }
 
     private fun runRemoveNonPrimaryUsers(userId: Int?) {
