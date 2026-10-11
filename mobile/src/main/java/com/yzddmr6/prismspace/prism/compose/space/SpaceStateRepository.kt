@@ -277,8 +277,10 @@ private class SpaceStateFactCollector(private val appContext: Context) {
         val running = runCatching { Users.isProfileRunning(appContext, profile) }.getOrDefault(false)
         val quiet = runCatching { Users.isProfileQuietModeEnabled(appContext, profile) }.getOrDefault(false)
         val unlocked = runCatching { userManager.isUserUnlocked(profile) }.getOrDefault(false)
-        val cachedHealth = bridgeHealth.cachedHealth(profile) ?: if (
-            packagePresent && running && unlocked && !quiet
+        // Foreign profiles (no evidence, or CLONE/PRIVATE) never receive bridge traffic.
+        val foreign = SpaceStateClassifier.isForeign(evidence.toFacts(userId), Modules.MODULE_ENGINE)
+        val cachedHealth = if (foreign) null else bridgeHealth.cachedHealth(profile) ?: if (
+            shouldProbeBridgeHealth(foreign, packagePresent, running, unlocked, quiet)
         ) {
             runCatching { bridgeHealth.refreshHealth(profile) }
                 .onFailure {
@@ -287,7 +289,7 @@ private class SpaceStateFactCollector(private val appContext: Context) {
                 .getOrNull()
         } else null
         val bridgeReady = cachedHealth?.available
-        val exact = if (packagePresent && !markerPresent && bridgeReady == true) exactProfileFacts(profile) else null
+        val exact = if (!foreign && packagePresent && !markerPresent && bridgeReady == true) exactProfileFacts(profile) else null
         if (exact?.profileOwner == true && exact.provisionComplete) {
             SpaceProvisioningTracker.finished(ProvisioningEndSignal.ProvisioningProbe)
         }
@@ -330,6 +332,16 @@ private class SpaceStateFactCollector(private val appContext: Context) {
         is ShuttleOutcome.Skipped -> SpaceBridgeCause.ProfileUnavailable
     }
 }
+
+/** Bridge health is probed only for a non-foreign profile that carries our package and can serve
+ *  the provider (running, unlocked, not quiet). */
+internal fun shouldProbeBridgeHealth(
+    foreign: Boolean,
+    packagePresent: Boolean,
+    running: Boolean,
+    unlocked: Boolean,
+    quiet: Boolean,
+): Boolean = !foreign && packagePresent && running && unlocked && !quiet
 
 private fun SpaceFacts.diagnosticLine(): String = profiles.joinToString(
     prefix = "Prism.SpaceState facts(profiles=[",

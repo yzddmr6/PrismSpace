@@ -34,6 +34,7 @@ import com.yzddmr6.prismspace.provisioning.SystemAppListSnapshot
 import com.yzddmr6.prismspace.provisioning.SystemAppPolicyRuntime
 import com.yzddmr6.prismspace.provisioning.SystemAppsManager
 import com.yzddmr6.prismspace.shuttle.ShuttleOutcome
+import com.yzddmr6.prismspace.shuttle.ShuttleProvider
 import com.yzddmr6.prismspace.util.Users
 import com.yzddmr6.prismspace.util.Users.Companion.isParentProfile
 import com.yzddmr6.prismspace.util.Users.Companion.toId
@@ -153,7 +154,9 @@ class PrismAppListProvider : AppListProvider<PrismAppInfo>() {
 					Log.w(TAG, "Unable to refresh profile apps user=${profile.toId()}", outcome.error)
 				}
 				is ShuttleOutcome.Skipped -> null.also {
-					Log.w(TAG, "Unable to refresh profile apps user=${profile.toId()}: ${outcome.reason}")
+					// A paused/locked space is an expected state, not a fault.
+					val message = "Unable to refresh profile apps user=${profile.toId()}: ${outcome.reason}"
+					if (outcome.reason == ShuttleProvider.PROFILE_UNAVAILABLE) Log.i(TAG, message) else Log.w(TAG, message)
 				}
 			}
 		} else (context().packageManager.getInstalledApplications(PM_FLAGS_APP_INFO)
