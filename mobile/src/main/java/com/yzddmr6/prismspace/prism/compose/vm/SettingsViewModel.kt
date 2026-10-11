@@ -185,6 +185,20 @@ internal fun mapSettingsUiModel(
     )
 }
 
+/**
+ * Surplus profiles are a parent-side ownership fact: inside the managed profile there is nothing
+ * to look up (and the owner-user accessor asserts in debug builds), so the lookup is not called.
+ * Real lookup failures degrade to no row.
+ */
+internal fun settingsSurplusProfileIds(
+    isParentProfile: Boolean,
+    lookup: () -> List<Int>,
+    onFailure: (Throwable) -> Unit = {},
+): List<Int> {
+    if (!isParentProfile) return emptyList()
+    return runCatching(lookup).onFailure(onFailure).getOrDefault(emptyList())
+}
+
 // ---------------------------------------------------------------------------
 // ViewModel backing the Settings screen.
 // ---------------------------------------------------------------------------
@@ -733,9 +747,11 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             capabilityState = capabilityState,
             selectedMode = runtime.preferredMode,
             res = prismResolver(getApplication()),
-            surplusProfileIds = runCatching { Users.getSurplusProfiles().map { it.toId() } }
-                .onFailure { DiagnosticLog.w(TAG, "surplus profile lookup failed", it) }
-                .getOrDefault(emptyList()),
+            surplusProfileIds = settingsSurplusProfileIds(
+                isParentProfile = Users.isParentProfile(),
+                lookup = { Users.getSurplusProfiles().map { it.toId() } },
+                onFailure = { DiagnosticLog.w(TAG, "surplus profile lookup failed", it) },
+            ),
         )
         val freezeState = observeSpaceFreezeState(context, presentation.kind)
         val spaceAction = settingsSpaceAction(

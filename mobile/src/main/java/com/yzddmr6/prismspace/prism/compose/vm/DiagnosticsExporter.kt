@@ -69,18 +69,25 @@ object DiagnosticsExporter {
     private fun collectProfileDiagnostics(context: Context): List<DiagnosticSection> {
         val stateRepo = SpaceStateRepository(context)
         val state = stateRepo.currentState()
-        val ownership = runCatching { Users.ownership() }.getOrDefault(ProfileOwnership.EMPTY)
         val targetId = selectDiagnosticsProfile(state, Users.profile?.toId())
-        // Always first: which profiles exist and which one is ours, whatever happens below.
-        val profilesSection = DiagnosticSection(
-            title = "Profiles",
-            body = profilesSectionBody(ownership, state, stateRepo.lastFactsDiagnosticLine(), targetId),
-        )
-        DiagnosticLog.i(TAG, "diagnostic export target user=${targetId ?: "-"} ${ownership.diagnosticLine()}")
-        val profile = targetId?.let(UserHandles::of) ?: return listOf(profilesSection, DiagnosticSection(
+        // The ownership partition is a parent-side fact; inside the managed profile there is none
+        // to report, so no Profiles section is written there.
+        val profilesSection = if (Users.isParentProfile()) {
+            val ownership = runCatching { Users.ownership() }
+                .onFailure { DiagnosticLog.w(TAG, "ownership snapshot unavailable", it) }
+                .getOrDefault(ProfileOwnership.EMPTY)
+            DiagnosticLog.i(TAG, "diagnostic export target user=${targetId ?: "-"} ${ownership.diagnosticLine()}")
+            // Always first: which profiles exist and which one is ours, whatever happens below.
+            DiagnosticSection(
+                title = "Profiles",
+                body = profilesSectionBody(ownership, state, stateRepo.lastFactsDiagnosticLine(), targetId),
+            )
+        } else null
+        val leading = listOfNotNull(profilesSection)
+        val profile = targetId?.let(UserHandles::of) ?: return leading + DiagnosticSection(
             title = "Dual-space diagnostic snapshot",
             body = "No managed profile is currently known to the main space.",
-        ))
+        )
         val healthSection = try {
             DiagnosticSection(
                 title = "Dual-space shuttle health user=${profile.toId()}",
@@ -124,13 +131,13 @@ object DiagnosticsExporter {
                     result.reason
                 }
             }
-            listOf(profilesSection, healthSection, DiagnosticSection(
+            leading + listOf(healthSection, DiagnosticSection(
                 title = "Dual-space diagnostic snapshot user=${profile.toId()}",
                 body = body,
             ))
         } catch (e: Exception) {
             DiagnosticLog.e(TAG, "dual-space diagnostic collection failed", e)
-            listOf(profilesSection, healthSection, DiagnosticSection(
+            leading + listOf(healthSection, DiagnosticSection(
                 title = "Dual-space diagnostic snapshot user=${profile.toId()}",
                 body = "Failed to read dual-space diagnostic snapshot: ${e.javaClass.name}: ${e.message.orEmpty()}",
             ))
