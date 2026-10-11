@@ -102,7 +102,7 @@ class PrismAppListProvider : AppListProvider<PrismAppInfo>() {
 			val appsInProfile = mPrismAppMap[profile] ?: return@forEach
 			val entry = appsInProfile[pkg] ?: return@forEach
 			Log.d(TAG, "Label updated for $pkg in profile ${profile.toId()}: $label")
-			val newEntry = PrismAppInfo(this, Users.profile, entry, null)
+			val newEntry = PrismAppInfo(this, profile, entry, null)
 			appsInProfile[pkg] = newEntry
 			notifyUpdate(setOf(newEntry))
 		}

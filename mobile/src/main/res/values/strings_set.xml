@@ -75,4 +75,7 @@
     <string name="lz_set_multi_space_summary">Experimental · depends on the system. If the device already has another dual space, PrismSpace recognizes it automatically.</string>
     <string name="lz_set_suspend_disabled_locked">Unlock the dual space before changing this</string>
     <string name="lz_set_suspend_disabled_bridge">Reconnect the dual space before changing this</string>
+    <string name="lz_set_surplus_profiles_title">Incomplete space detected</string>
+    <string name="lz_set_surplus_profiles_summary">User %1$s has PrismSpace installed but was never fully set up. It takes up a system work profile slot and may have been created by an external tool. PrismSpace will not delete it automatically; you can remove it in system Settings.</string>
+    <string name="lz_set_surplus_profiles_removal_message">Open system \"Settings - Accounts\", find the work profile that was not fully set up and select \"Remove work profile\". Settings may list several work profiles: do not remove the dual space you are using, or its clones and data will be deleted with it.</string>
 </resources>

@@ -8,6 +8,8 @@ import android.app.ProgressDialog;
 import android.content.Intent;
 import android.provider.Settings;
 
+import androidx.annotation.StringRes;
+
 import com.yzddmr6.prismspace.prism.compose.nav.SystemAppPickerPrompt;
 import com.yzddmr6.prismspace.util.Dialogs;
 import com.yzddmr6.prismspace.analytics.Analytics;
@@ -97,8 +99,8 @@ public class PrismSetup {
 		if (progress.isShowing()) progress.dismiss();
 	}
 
-	private static void showPromptForProfileManualRemoval(final Activity activity) {
-		final AlertDialog.Builder dialog = new AlertDialog.Builder(activity).setMessage(R.string.dialog_cannot_destroy_message)
+	private static void showPromptForProfileManualRemoval(final Activity activity, final @StringRes int message) {
+		final AlertDialog.Builder dialog = new AlertDialog.Builder(activity).setMessage(message)
 				.setNegativeButton(android.R.string.ok, null);
 		final Intent intent = new Intent(Settings.ACTION_SYNC_SETTINGS);
 		if (intent.resolveActivity(activity.getPackageManager()) == null) intent.setAction(Settings.ACTION_SETTINGS);	// Fallback to entrance of Settings
@@ -111,6 +113,11 @@ public class PrismSetup {
 	/** Compose-path entry: surface the system manual-removal prompt (used when the
 	 *  feedback mapper reports routeToSystemRemoval). Delegates to the private impl. */
 	@ProfileUser public static void promptManualRemoval(final Activity activity) {
-		showPromptForProfileManualRemoval(activity);
+		showPromptForProfileManualRemoval(activity, R.string.dialog_cannot_destroy_message);
+	}
+
+	/** Same system removal hand-off with a situation-specific message (e.g. surplus profiles). */
+	public static void promptManualRemoval(final Activity activity, final @StringRes int message) {
+		showPromptForProfileManualRemoval(activity, message);
 	}
 }

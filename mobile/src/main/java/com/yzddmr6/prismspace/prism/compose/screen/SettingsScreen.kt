@@ -166,6 +166,18 @@ fun SettingsScreen() {
                             onClick = { AppLaunchSignals.signalOpenSpaceSystemApps() },
                         )
                     }
+                    // Diagnostic only: surplus profiles are never targets and never removed in-app.
+                    if (state.surplusProfileIds.isNotEmpty()) {
+                        ActionRow(
+                            title = stringResource(R.string.lz_set_surplus_profiles_title),
+                            summary = stringResource(
+                                R.string.lz_set_surplus_profiles_summary,
+                                state.surplusProfileIds.joinToString(", "),
+                            ),
+                            leadingIcon = PrismIcons.Alert,
+                            onClick = { vm.openSurplusProfileRemoval(Activities.findActivityFrom(context)) },
+                        )
+                    }
                 }
             }
 

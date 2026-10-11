@@ -26,9 +26,9 @@ import com.yzddmr6.prismspace.util.enableComponent
  * LAUNCHER activity in the managed profile. This activity serves three roles:
  *
  *   1. Required visible icon for ProfileOwner (system constraint)
- *   2. Profile-side identifier for `Users.refreshUsers()` — that lookup compares the
- *      activity NAME (not class string) against parent-profile LauncherActivity to
- *      detect PrismSpace-managed profiles
+ *   2. Ownership marker: enabled only when provisioning completes, read from the parent
+ *      side by `ProfileOwnershipEvidenceCollector` via `Modules.ACTIVITY_PROFILE_SETTINGS_ENTRY`
+ *      (this class name; asserted equal in `PrismSettingsActivityEnablerTest`)
  *   3. UX entry point — tapping shows a Compose status page and offers a "返回主空间"
  *      cross-profile bounce (best-effort)
  *

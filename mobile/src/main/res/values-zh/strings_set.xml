@@ -75,4 +75,7 @@
     <string name="lz_set_multi_space_summary">实验功能 · 仅部分定制系统可用；若设备已存在第二个双开空间，PrismSpace 会自动识别</string>
     <string name="lz_set_suspend_disabled_locked">解锁后才能操作</string>
     <string name="lz_set_suspend_disabled_bridge">重新连接后才能操作</string>
+    <string name="lz_set_surplus_profiles_title">检测到未完成开通的空间</string>
+    <string name="lz_set_surplus_profiles_summary">用户 %1$s 装有 PrismSpace 但未完成开通，占用系统工作资料名额，可能由外部工具创建。应用不会自动删除，可在系统设置中移除。</string>
+    <string name="lz_set_surplus_profiles_removal_message">请打开系统设置 -（用户和）账号，找到未完成开通的工作资料后点选“移除工作资料”。设置中可能同时显示多个工作资料，请勿误删正在使用的双开空间，否则其中的分身与数据会一并删除。</string>
 </resources>

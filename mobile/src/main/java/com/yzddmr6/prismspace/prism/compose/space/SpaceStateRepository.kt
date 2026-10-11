@@ -1,8 +1,6 @@
 package com.yzddmr6.prismspace.prism.compose.space
 
 import android.content.Context
-import android.content.pm.LauncherApps
-import android.content.pm.PackageManager.MATCH_UNINSTALLED_PACKAGES
 import android.os.UserHandle
 import android.os.UserManager
 import com.yzddmr6.prismspace.analytics.DiagnosticLog
@@ -10,17 +8,15 @@ import com.yzddmr6.prismspace.bridge.Bridge
 import com.yzddmr6.prismspace.bridge.BridgeTargets
 import com.yzddmr6.prismspace.bridge.ProfileProvisioningFactsDto
 import com.yzddmr6.prismspace.bridge.QueryProfileProvisioningFacts
-import com.yzddmr6.prismspace.data.helper.installed
-import com.yzddmr6.prismspace.settings.PrismSettingsActivity
 import com.yzddmr6.prismspace.shuttle.ShuttleNotReadyCause
 import com.yzddmr6.prismspace.shuttle.ShuttleOutcome
+import com.yzddmr6.prismspace.space.ProfileOwnershipEvidenceCollector
 import com.yzddmr6.prismspace.space.SpaceBridgeCause
 import com.yzddmr6.prismspace.space.SpaceFacts
 import com.yzddmr6.prismspace.space.SpaceProfileFacts
 import com.yzddmr6.prismspace.space.SpaceState
 import com.yzddmr6.prismspace.space.SpaceStateClassifier
 import com.yzddmr6.prismspace.util.DevicePolicies
-import com.yzddmr6.prismspace.util.LauncherAppsCompat
 import com.yzddmr6.prismspace.util.Modules
 import com.yzddmr6.prismspace.util.Users
 import com.yzddmr6.prismspace.util.Users.Companion.toId
@@ -246,20 +242,19 @@ private object SpaceStateStores {
 /** Collects Android facts; all policy remains in the shared pure classifier. */
 private class SpaceStateFactCollector(private val appContext: Context) {
     private val bridgeHealth = BridgeHealthRepository(appContext)
+    private val ownershipEvidence = ProfileOwnershipEvidenceCollector(appContext, SpaceStateRepository.TAG)
 
     fun facts(): SpaceFacts {
         runCatching { Users.refreshUsers(appContext) }
             .onFailure { DiagnosticLog.w(SpaceStateRepository.TAG, "refresh users before classification failed", it) }
         val userManager = appContext.getSystemService(UserManager::class.java)
             ?: return SpaceFacts(emptyList())
-        val launcherApps = appContext.getSystemService(LauncherApps::class.java)
-            ?: return SpaceFacts(emptyList())
         val profiles = runCatching { userManager.userProfiles.orEmpty() }
             .onFailure { DiagnosticLog.w(SpaceStateRepository.TAG, "profile enumeration failed", it) }
             .getOrDefault(emptyList())
             .filterNot { it == Users.current() }
         return SpaceFacts(profiles.map { profile ->
-            collectProfileFacts(userManager, launcherApps, profile)
+            collectProfileFacts(userManager, profile)
         })
     }
 
@@ -273,28 +268,12 @@ private class SpaceStateFactCollector(private val appContext: Context) {
 
     private fun collectProfileFacts(
         userManager: UserManager,
-        launcherApps: LauncherApps,
         profile: UserHandle,
     ): SpaceProfileFacts {
         val userId = profile.toId()
-        val packagePresent = runCatching {
-            LauncherAppsCompat.getApplicationInfoNoThrows(
-                launcherApps, Modules.MODULE_ENGINE, MATCH_UNINSTALLED_PACKAGES, profile,
-            )?.installed == true
-        }.onFailure {
-            DiagnosticLog.w(SpaceStateRepository.TAG, "package fact unavailable user=$userId", it)
-        }.getOrDefault(false)
-        val markerPresent = runCatching {
-            launcherApps.getActivityList(Modules.MODULE_ENGINE, profile).orEmpty()
-                .any { it.componentName.className == PrismSettingsActivity::class.java.name }
-        }.onFailure {
-            DiagnosticLog.w(SpaceStateRepository.TAG, "marker fact unavailable user=$userId", it)
-        }.getOrDefault(false)
-        val ownerPackage = runCatching {
-            DevicePolicies.getProfileOwnerAsUser(appContext, profile)?.orElse(null)?.packageName
-        }.onFailure {
-            DiagnosticLog.w(SpaceStateRepository.TAG, "profile owner fact unavailable user=$userId", it)
-        }.getOrNull()
+        val evidence = ownershipEvidence.collect(profile)
+        val packagePresent = evidence.prismPackagePresent
+        val markerPresent = evidence.ownershipMarkerPresent
         val running = runCatching { Users.isProfileRunning(appContext, profile) }.getOrDefault(false)
         val quiet = runCatching { Users.isProfileQuietModeEnabled(appContext, profile) }.getOrDefault(false)
         val unlocked = runCatching { userManager.isUserUnlocked(profile) }.getOrDefault(false)
@@ -325,7 +304,8 @@ private class SpaceStateFactCollector(private val appContext: Context) {
             bridgeCause = cachedHealth?.ping?.toBridgeCause() ?: SpaceBridgeCause.NotChecked,
             profileOwner = exact?.profileOwner,
             provisionComplete = exact?.provisionComplete,
-            profileOwnerPackage = ownerPackage,
+            profileOwnerPackage = evidence.profileOwnerPackage,
+            vendorProfileType = evidence.vendorProfileType,
         )
     }
 
@@ -357,7 +337,7 @@ private fun SpaceFacts.diagnosticLine(): String = profiles.joinToString(
 ) { p ->
     "${p.userId}:pkg=${p.prismPackagePresent},marker=${p.ownershipMarkerPresent}," +
         "owner=${p.profileOwnerPackage ?: "-"},running=${p.running},unlocked=${p.unlocked}," +
-        "quiet=${p.quietMode},bridge=${p.bridgeReady}"
+        "quiet=${p.quietMode},bridge=${p.bridgeReady},type=${p.vendorProfileType}"
 }
 
 internal enum class ProvisioningEndSignal {

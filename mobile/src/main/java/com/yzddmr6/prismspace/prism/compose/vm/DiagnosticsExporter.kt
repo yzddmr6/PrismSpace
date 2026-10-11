@@ -8,9 +8,12 @@ import com.yzddmr6.prismspace.analytics.CrashMarker
 import com.yzddmr6.prismspace.analytics.DiagnosticLog
 import com.yzddmr6.prismspace.analytics.DiagnosticSection
 import com.yzddmr6.prismspace.bridge.BridgeTargets
-import com.yzddmr6.prismspace.prism.compose.space.SpaceSnapshot
 import com.yzddmr6.prismspace.prism.compose.space.SpaceStateRepository
 import com.yzddmr6.prismspace.shuttle.ShuttleProvider
+import com.yzddmr6.prismspace.space.ProfileOwnership
+import com.yzddmr6.prismspace.space.SpaceState
+import com.yzddmr6.prismspace.space.SpaceStateClassifier
+import com.yzddmr6.prismspace.util.UserHandles
 import com.yzddmr6.prismspace.util.Users
 import com.yzddmr6.prismspace.util.Users.Companion.toId
 import kotlinx.coroutines.Dispatchers
@@ -64,21 +67,20 @@ object DiagnosticsExporter {
     }
 
     private fun collectProfileDiagnostics(context: Context): List<DiagnosticSection> {
-        val profile = Users.profile ?: run {
-            // No PrismSpace-managed profile: the classified state and its facts are the single most
-            // valuable clue for foreign-profile (XSpace/OEM clone) and orphan misclassification bugs.
-            val stateRepo = SpaceStateRepository(context)
-            val state = (stateRepo.state.value as? SpaceSnapshot.Loaded)?.state
-            val facts = stateRepo.lastFactsDiagnosticLine()
-            return listOf(DiagnosticSection(
-                title = "Dual-space diagnostic snapshot",
-                body = buildString {
-                    append("No managed profile is currently known to the main space.")
-                    append("\nClassified space state: ").append(state ?: "unknown")
-                    if (facts != null) append("\nLast classification: ").append(facts)
-                },
-            ))
-        }
+        val stateRepo = SpaceStateRepository(context)
+        val state = stateRepo.currentState()
+        val ownership = runCatching { Users.ownership() }.getOrDefault(ProfileOwnership.EMPTY)
+        val targetId = selectDiagnosticsProfile(state, Users.profile?.toId())
+        // Always first: which profiles exist and which one is ours, whatever happens below.
+        val profilesSection = DiagnosticSection(
+            title = "Profiles",
+            body = profilesSectionBody(ownership, state, stateRepo.lastFactsDiagnosticLine(), targetId),
+        )
+        DiagnosticLog.i(TAG, "diagnostic export target user=${targetId ?: "-"} ${ownership.diagnosticLine()}")
+        val profile = targetId?.let(UserHandles::of) ?: return listOf(profilesSection, DiagnosticSection(
+            title = "Dual-space diagnostic snapshot",
+            body = "No managed profile is currently known to the main space.",
+        ))
         val healthSection = try {
             DiagnosticSection(
                 title = "Dual-space shuttle health user=${profile.toId()}",
@@ -122,16 +124,39 @@ object DiagnosticsExporter {
                     result.reason
                 }
             }
-            listOf(healthSection, DiagnosticSection(
+            listOf(profilesSection, healthSection, DiagnosticSection(
                 title = "Dual-space diagnostic snapshot user=${profile.toId()}",
                 body = body,
             ))
         } catch (e: Exception) {
             DiagnosticLog.e(TAG, "dual-space diagnostic collection failed", e)
-            listOf(healthSection, DiagnosticSection(
+            listOf(profilesSection, healthSection, DiagnosticSection(
                 title = "Dual-space diagnostic snapshot user=${profile.toId()}",
                 body = "Failed to read dual-space diagnostic snapshot: ${e.javaClass.name}: ${e.message.orEmpty()}",
             ))
         }
     }
+}
+
+/**
+ * The profile-side collection target is the classifier's primary: the classified state's userId.
+ * A state with no own profile (none, or foreign only) has no primary. [fallback] (Users.profile,
+ * identical by construction) is used only before the first classification snapshot exists.
+ */
+internal fun selectDiagnosticsProfile(state: SpaceState?, fallback: Int?): Int? = when {
+    state == null -> fallback
+    SpaceStateClassifier.ownProfileAbsent(state) -> null
+    else -> state.userId
+}
+
+internal fun profilesSectionBody(
+    ownership: ProfileOwnership,
+    state: SpaceState?,
+    lastFactsLine: String?,
+    targetId: Int?,
+): String = buildString {
+    append(ownership.diagnosticLine())
+    append("\nClassified space state: ").append(state ?: "unknown")
+    append("\nDiagnostics target: ").append(targetId?.let { "user=$it" } ?: "-")
+    if (lastFactsLine != null) append("\nLast classification: ").append(lastFactsLine)
 }

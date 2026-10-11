@@ -207,4 +207,32 @@ class SettingsModeTest {
         assertFalse("spaceSuspended must default to false", model.spaceSuspended)
         assertEquals(com.yzddmr6.prismspace.prism.compose.vm.SpaceFreezeState.Unknown, model.spaceFreezeState)
     }
+
+    // ---------------------------------------------------------------------------
+    // Surplus profiles: the diagnostic row appears only when the partition reports them.
+    // ---------------------------------------------------------------------------
+    @Test
+    fun `surplus profile ids pass through and default to none`() {
+        val none = mapSettingsUiModel(
+            profileOwner = true,
+            shizukuAuthorized = false,
+            modeState = modeState(PrismShizukuAdbStatus.NotRunning),
+            capabilityState = capState(),
+        )
+        assertTrue("no surplus row without surplus profiles", none.surplusProfileIds.isEmpty())
+
+        val withSurplus = mapSettingsUiModel(
+            profileOwner = true,
+            shizukuAuthorized = false,
+            modeState = modeState(PrismShizukuAdbStatus.NotRunning),
+            capabilityState = capState(),
+            res = testZhResolver,
+            surplusProfileIds = listOf(11, 12),
+        )
+        assertEquals(listOf(11, 12), withSurplus.surplusProfileIds)
+        // The surplus profiles never change the primary's status presentation.
+        assertEquals(none.level, withSurplus.level)
+        assertEquals(none.spaceActionTitle, withSurplus.spaceActionTitle)
+        assertEquals(none.profileOwnerReady, withSurplus.profileOwnerReady)
+    }
 }
