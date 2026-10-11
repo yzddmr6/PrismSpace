@@ -1,10 +1,24 @@
 package com.yzddmr6.prismspace.shuttle
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ShuttleOutcomeTest {
+
+    @Test fun availableTargetIsNotSkipped() =
+        assertFalse(shouldSkipForAvailability(isCurrent = false, running = true, quiet = false, unlocked = true))
+
+    @Test fun quietStoppedOrLockedTargetIsSkipped() {
+        assertTrue(shouldSkipForAvailability(isCurrent = false, running = true, quiet = true, unlocked = true))
+        assertTrue(shouldSkipForAvailability(isCurrent = false, running = false, quiet = false, unlocked = true))
+        assertTrue(shouldSkipForAvailability(isCurrent = false, running = true, quiet = false, unlocked = false))
+        assertTrue(shouldSkipForAvailability(isCurrent = false, running = false, quiet = true, unlocked = false))
+    }
+
+    @Test fun currentUserIsNeverGated() =
+        assertFalse(shouldSkipForAvailability(isCurrent = true, running = false, quiet = true, unlocked = false))
 
     @Test fun securityExceptionWithoutGrantIsPermissionDenied() {
         val cause = classifyShuttleNotReadyCause(SecurityException("Permission Denial"), permissionGranted = false)

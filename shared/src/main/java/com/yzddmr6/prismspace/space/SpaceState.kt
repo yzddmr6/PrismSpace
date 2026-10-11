@@ -14,7 +14,32 @@ data class SpaceProfileFacts(
     val profileOwner: Boolean? = null,
     val provisionComplete: Boolean? = null,
     val profileOwnerPackage: String? = null,
+    val vendorProfileType: VendorProfileType = VendorProfileType.Unknown,
 )
+
+/** Platform user type of a profile, as read from the public API (API 35+); [Unknown] below it or
+ *  when unreadable. Only [Clone] and [Private] change classification: they are never PrismSpace's. */
+enum class VendorProfileType { Unknown, Managed, Clone, Private, Other }
+
+/**
+ * The single ownership partition of the visible non-parent profiles produced by
+ * [SpaceStateClassifier.ownership]. Ids are in rank order (foreign: by user id). [managed] is the
+ * set every "which dual space" consumer works on; [primary] is the one classified state target.
+ */
+data class ProfileOwnership(
+    val primary: Int?,
+    val owned: List<Int>,
+    val surplus: List<Int>,
+    val foreign: List<Int>,
+    val managed: List<Int>,
+) {
+    fun diagnosticLine(): String =
+        "primary=${primary ?: "-"} owned=$owned surplus=$surplus foreign=$foreign"
+
+    companion object {
+        val EMPTY = ProfileOwnership(null, emptyList(), emptyList(), emptyList(), emptyList())
+    }
+}
 
 data class SpaceFacts(val profiles: List<SpaceProfileFacts>)
 
@@ -54,24 +79,76 @@ object SpaceStateClassifier {
     fun ownProfileAbsent(state: SpaceState?): Boolean =
         state == SpaceState.NoProfile || state is SpaceState.ForeignProfile
 
+    /** Clone / private profiles are never PrismSpace's, whatever is installed in them. */
+    fun isForeign(profile: SpaceProfileFacts, prismPackage: String): Boolean =
+        profile.vendorProfileType == VendorProfileType.Clone ||
+            profile.vendorProfileType == VendorProfileType.Private ||
+            !hasPrismOwnershipEvidence(profile, prismPackage)
+
+    /** Provisioning finished here (marker) or PrismSpace is the confirmed profile owner. */
+    fun isOwned(profile: SpaceProfileFacts, prismPackage: String): Boolean =
+        profile.ownershipMarkerPresent || profile.profileOwnerPackage == prismPackage
+
     /**
-     * Select one deterministic PrismSpace candidate, then classify by the first failed invariant.
-     * Ownership evidence outranks every other signal: without it a profile is foreign, never an
-     * orphan. A marker is the strongest per-Prism evidence, package presence is the recovery
-     * evidence, and user id is only a stable tie-breaker. Android's profile enumeration order is
-     * never trusted.
+     * The only ownership ranking. Foreign profiles are dropped first. Ownership evidence outranks
+     * every other signal, a marker is the strongest per-Prism evidence, package presence is the
+     * recovery evidence, and user id is only a stable tie-breaker. Android's profile enumeration
+     * order is never trusted.
      */
-    fun classify(facts: SpaceFacts, prismPackage: String): SpaceState {
-        val profile = facts.profiles.sortedWith(
+    fun rank(facts: SpaceFacts, prismPackage: String): List<SpaceProfileFacts> =
+        facts.profiles.filterNot { isForeign(it, prismPackage) }.sortedWith(
             compareByDescending<SpaceProfileFacts> { hasPrismOwnershipEvidence(it, prismPackage) }
                 .thenByDescending { it.ownershipMarkerPresent }
                 .thenByDescending { it.prismPackagePresent }
                 .thenBy { it.userId },
-        ).firstOrNull() ?: return SpaceState.NoProfile
+        )
 
-        if (!hasPrismOwnershipEvidence(profile, prismPackage)) {
-            return SpaceState.ForeignProfile(profile.userId, profile.profileOwnerPackage)
-        }
+    /** The one profile every "current dual space" consumer targets; null when none is ours. */
+    fun primary(facts: SpaceFacts, prismPackage: String): SpaceProfileFacts? =
+        rank(facts, prismPackage).firstOrNull()
+
+    /** Every provisioned profile (several in the experimental multi-space mode), rank order. */
+    fun owned(facts: SpaceFacts, prismPackage: String): List<SpaceProfileFacts> =
+        rank(facts, prismPackage).filter { isOwned(it, prismPackage) }
+
+    /** Profiles with our evidence that are neither provisioned nor the primary (e.g. a second
+     *  package-only profile). Never a target of any action. */
+    fun surplus(facts: SpaceFacts, prismPackage: String): List<SpaceProfileFacts> {
+        val ranked = rank(facts, prismPackage)
+        val primary = ranked.firstOrNull()
+        return ranked.filter { it.userId != primary?.userId && !isOwned(it, prismPackage) }
+    }
+
+    /** owned ∪ {primary}, rank order. A package-only primary stays managed so half-provisioning
+     *  repair can still probe and resume it over the bridge. */
+    fun managed(facts: SpaceFacts, prismPackage: String): List<SpaceProfileFacts> {
+        val ranked = rank(facts, prismPackage)
+        val primary = ranked.firstOrNull()
+        return ranked.filter { it.userId == primary?.userId || isOwned(it, prismPackage) }
+    }
+
+    fun foreign(facts: SpaceFacts, prismPackage: String): List<SpaceProfileFacts> =
+        facts.profiles.filter { isForeign(it, prismPackage) }.sortedBy { it.userId }
+
+    fun ownership(facts: SpaceFacts, prismPackage: String): ProfileOwnership = ProfileOwnership(
+        primary = primary(facts, prismPackage)?.userId,
+        owned = owned(facts, prismPackage).map { it.userId },
+        surplus = surplus(facts, prismPackage).map { it.userId },
+        foreign = foreign(facts, prismPackage).map { it.userId },
+        managed = managed(facts, prismPackage).map { it.userId },
+    )
+
+    /**
+     * Classify the [primary] candidate by its first failed invariant. Without any candidate the
+     * state is [SpaceState.ForeignProfile] for the lowest foreign id, or [SpaceState.NoProfile].
+     * The returned state's userId always equals [primary]'s.
+     */
+    fun classify(facts: SpaceFacts, prismPackage: String): SpaceState {
+        val profile = rank(facts, prismPackage).firstOrNull()
+            ?: return foreign(facts, prismPackage).firstOrNull()
+                ?.let { SpaceState.ForeignProfile(it.userId, it.profileOwnerPackage) }
+                ?: SpaceState.NoProfile
+
         if (!profile.prismPackagePresent) return SpaceState.OrphanProfile(profile.userId)
         if (profile.provisioningActive) return SpaceState.Provisioning(profile.userId)
         if (!profile.ownershipMarkerPresent) {

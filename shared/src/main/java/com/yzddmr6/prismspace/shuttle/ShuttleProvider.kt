@@ -33,6 +33,13 @@ class ShuttleProvider: ContentProvider() {
 
 		fun <R> call(context: Context, target: UserHandle, command: BridgeCommand<R>): ShuttleOutcome<R> {
 			val targetUser = target.toId()
+			if (isTargetUnavailable(context, target)) {
+				DiagnosticLog.i(
+					TAG,
+					"Bridge call skipped operation=${command.id} targetUser=$targetUser cause=$PROFILE_UNAVAILABLE",
+				)
+				return ShuttleOutcome.Skipped(PROFILE_UNAVAILABLE)
+			}
 			if (!isReady(context, target)) {
 				DiagnosticLog.w(
 					TAG,
@@ -64,6 +71,19 @@ class ShuttleProvider: ContentProvider() {
 					ShuttleOutcome.Failed(error)
 				}
 			}
+		}
+
+		/** A stopped, quiet or locked target cannot serve the provider; calling it only produces
+		 *  `Unknown authority` noise. Unreadable facts never block the call (the call classifies). */
+		private fun isTargetUnavailable(context: Context, target: UserHandle): Boolean {
+			val isCurrent = target == Users.current()
+			if (isCurrent) return false
+			val running = runCatching { Users.isProfileRunning(context, target) }.getOrDefault(true)
+			val quiet = runCatching { Users.isProfileQuietModeEnabled(context, target) }.getOrDefault(false)
+			val unlocked = runCatching {
+				context.getSystemService(UserManager::class.java)?.isUserUnlocked(target) ?: true
+			}.getOrDefault(true)
+			return shouldSkipForAvailability(isCurrent, running, quiet, unlocked)
 		}
 
 		private fun isReady(c: Context, profile: UserHandle) = c.isPermissionGranted(buildCrossProfileUri(profile.toId()))
@@ -233,6 +253,7 @@ class ShuttleProvider: ContentProvider() {
 		fun buildCrossProfileUri(profileId: Int = Users.currentId()): Uri = Uri.parse("$SCHEME_CONTENT://$profileId@$AUTHORITY")
 
 		private const val AUTHORITY = "com.yzddmr6.prismspace.shuttle"
+		const val PROFILE_UNAVAILABLE = "profile_unavailable"
 		const val CONTENT_URI = "$SCHEME_CONTENT://$AUTHORITY"
 		private const val SHUTTLE_HEALTH_TIMEOUT_MS = 1_500L
 		private const val BRIDGE_CALL_MAX_ATTEMPTS = 3

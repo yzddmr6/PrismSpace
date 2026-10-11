@@ -19,6 +19,10 @@ import androidx.core.content.getSystemService
 import com.yzddmr6.prismspace.analytics.DiagnosticLog
 import com.yzddmr6.prismspace.analytics.analytics
 import com.yzddmr6.prismspace.home.HomeRole
+import com.yzddmr6.prismspace.space.ProfileOwnership
+import com.yzddmr6.prismspace.space.ProfileOwnershipEvidenceCollector
+import com.yzddmr6.prismspace.space.SpaceFacts
+import com.yzddmr6.prismspace.space.SpaceStateClassifier
 import com.yzddmr6.prismspace.util.PseudoContentProvider
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -98,17 +102,18 @@ class Users : PseudoContentProvider() {
 			parentProfile = profiles.firstOrNull() ?: CURRENT
 			sCurrentProfileManagedByPrism = false
 			if (parentProfile == CURRENT) {      // Running in parent profile
-				val uiModule = Modules.getMainLaunchActivity(context).packageName
-				val la = context.getSystemService<LauncherApps>()!!
-				val activityInOwner = la.getActivityList(uiModule, CURRENT).firstOrNull()?.name
-				if (activityInOwner == null) Log.w(TAG, "Main launcher activity is unavailable; ownership marker cannot be read")
-				for (profile in profiles.filterNot { it == parentProfile }) {
-					val marked = activityInOwner != null && la.getActivityList(uiModule, profile).orEmpty()
-						.any { activity -> activity.name != activityInOwner }
-					if (marked) profilesByPrism.add(profile).also {
-						Log.i(TAG, "Profile managed by PrismSpace: ${profile.toId()}")
-					} else Log.i(TAG, "Profile not managed by PrismSpace: ${profile.toId()}")
-				}
+				// Same evidence and same ranking as SpaceStateClassifier.classify: profile == the
+				// classified state's userId, managed = owned ∪ {primary}, never enumeration order.
+				val collector = ProfileOwnershipEvidenceCollector(context, TAG)
+				val candidates = profiles.filterNot { it == parentProfile }
+				val facts = SpaceFacts(candidates.map { collector.collect(it).toFacts(it.toId()) })
+				val ownership = SpaceStateClassifier.ownership(facts, Modules.MODULE_ENGINE)
+				val byId = candidates.associateBy { it.toId() }
+				profile = ownership.primary?.let(byId::get)
+				sSurplusProfiles = ownership.surplus.mapNotNull(byId::get)
+				sProfilesManagedByPrism = ownership.managed.mapNotNull(byId::get)
+				sOwnership = ownership
+				logOwnership(ownership)
 			} else {
 				sCurrentProfileManagedByPrism = runCatching { DevicePolicies(context).isProfileOwner }.getOrDefault(false)
 				for (user in profiles.filterNot { it == parentProfile })
@@ -116,12 +121,23 @@ class Users : PseudoContentProvider() {
 					else if (sCurrentProfileManagedByPrism) profilesByPrism.add(user).also {
 						Log.i(TAG, "Profile managed by PrismSpace: ${user.toId()}")
 					} else Log.w(TAG, "Current profile is not managed by PrismSpace: ${user.toId()}")
+
+				profile = profilesByPrism.lastOrNull()
+
+				profilesByPrism.sortWith(Comparator.comparing { um.getSerialNumberForUser(it) })
+				sSurplusProfiles = emptyList()
+				sProfilesManagedByPrism = profilesByPrism
 			}
+		}
 
-			profile = profilesByPrism.lastOrNull()
+		@Volatile private var lastOwnershipLog: String? = null
 
-			profilesByPrism.sortWith(Comparator.comparing { um.getSerialNumberForUser(it) })
-			sProfilesManagedByPrism = profilesByPrism
+		/** Logged only when the partition changes within this process. */
+		private fun logOwnership(ownership: ProfileOwnership) {
+			val line = "ownership refreshed ${ownership.diagnosticLine()}"
+			if (line == lastOwnershipLog) return
+			lastOwnershipLog = line
+			DiagnosticLog.i(TAG, line)
 		}
 
 			fun isProfileRunning(context: Context, user: UserHandle): Boolean {
@@ -192,6 +208,10 @@ class Users : PseudoContentProvider() {
 
 		/** Excluding parent profile */
 		@OwnerUser @JvmStatic fun getProfilesManagedByPrism() = sProfilesManagedByPrism.also { ensureParentProfile() }
+		/** Profiles carrying our package but neither provisioned nor primary; never an action target. */
+		@OwnerUser @JvmStatic fun getSurplusProfiles(): List<UserHandle> = sSurplusProfiles.also { ensureParentProfile() }
+		/** Last parent-side ownership partition (diagnostics); [ProfileOwnership.EMPTY] before the first refresh. */
+		@OwnerUser @JvmStatic fun ownership(): ProfileOwnership = sOwnership.also { ensureParentProfile() }
 		/** Including parent profile and profiles not managed by PrismSpace (probably created by other DPC in non-primary user. */
 		fun getProfileCount() = sProfileCount
 		@JvmStatic fun UserHandle.toId() = hashCode()
@@ -244,7 +264,9 @@ class Users : PseudoContentProvider() {
 		private var mDebugBuild = false
 		private var sProfileCount: Int = 0
 		@Volatile private var sCurrentProfileManagedByPrism = false
-		private var sProfilesManagedByPrism: List<UserHandle> = emptyList() // Also safe if initialized in another process.
+		@Volatile private var sProfilesManagedByPrism: List<UserHandle> = emptyList() // Also safe if initialized in another process.
+		@Volatile private var sSurplusProfiles: List<UserHandle> = emptyList()
+		@Volatile private var sOwnership: ProfileOwnership = ProfileOwnership.EMPTY
 		private const val PER_USER_RANGE = 100000
 		private const val TAG = "Prism.Users"
 	}

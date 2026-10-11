@@ -1,5 +1,7 @@
 package com.yzddmr6.prismspace.util
 
+import com.yzddmr6.prismspace.space.VendorProfileType
+
 /** Whether a vendor system-level clone profile (e.g. HyperOS XSpace) exists next to this user. */
 enum class CloneProfilePresence { Present, Absent, Unknown }
 
@@ -14,6 +16,10 @@ enum class CloneProfilePresence { Present, Absent, Unknown }
 object VendorCloneProfiles {
     /** Same value as `UserManager.USER_TYPE_PROFILE_CLONE` (API 35). */
     const val USER_TYPE_PROFILE_CLONE = "android.os.usertype.profile.CLONE"
+    /** Same value as `UserManager.USER_TYPE_PROFILE_MANAGED`. */
+    const val USER_TYPE_PROFILE_MANAGED = "android.os.usertype.profile.MANAGED"
+    /** Same value as `UserManager.USER_TYPE_PROFILE_PRIVATE` (API 35). */
+    const val USER_TYPE_PROFILE_PRIVATE = "android.os.usertype.profile.PRIVATE"
     const val MIN_SDK = 35
 
     /** [profileTypes]: the user type of every profile in this profile group; null = unreadable. */
@@ -22,6 +28,16 @@ object VendorCloneProfiles {
         profileTypes.any { it == USER_TYPE_PROFILE_CLONE } -> CloneProfilePresence.Present
         profileTypes.any { it == null } -> CloneProfilePresence.Unknown
         else -> CloneProfilePresence.Absent
+    }
+
+    /** Maps a public user type (null = unreadable) to the classification enum; below API 35 the
+     *  type is never trusted and the answer is always [VendorProfileType.Unknown]. */
+    fun profileType(sdkInt: Int, userType: String?): VendorProfileType = when {
+        sdkInt < MIN_SDK || userType == null -> VendorProfileType.Unknown
+        userType == USER_TYPE_PROFILE_MANAGED -> VendorProfileType.Managed
+        userType == USER_TYPE_PROFILE_CLONE -> VendorProfileType.Clone
+        userType == USER_TYPE_PROFILE_PRIVATE -> VendorProfileType.Private
+        else -> VendorProfileType.Other
     }
 
     /**

@@ -43,6 +43,11 @@ fun classifyShuttleNotReadyCause(error: RuntimeException, permissionGranted: Boo
 		else -> null
 	}
 
+/** Bridge availability gate: a call to another user proceeds only when that user is running,
+ *  not in quiet mode and credential-unlocked. Calls into the current user are never gated. */
+fun shouldSkipForAvailability(isCurrent: Boolean, running: Boolean, quiet: Boolean, unlocked: Boolean): Boolean =
+	!isCurrent && !(running && !quiet && unlocked)
+
 internal fun <R> runBoundedOutcome(timeoutMs: Long, block: () -> ShuttleOutcome<R>): ShuttleOutcome<R> {
 	val latch = CountDownLatch(1)
 	val value = AtomicReference<ShuttleOutcome<R>>()

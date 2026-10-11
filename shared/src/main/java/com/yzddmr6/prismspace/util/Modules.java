@@ -31,6 +31,10 @@ public class Modules {
 	// Engine is singleton across the device.
 	public static final String MODULE_ENGINE = "com.yzddmr6.prismspace";
 
+	/** Profile-side settings entry, enabled only when provisioning completes: the ownership marker.
+	 *  Lives here so shared code never depends on the mobile class; mobile asserts equality in a test. */
+	public static final String ACTIVITY_PROFILE_SETTINGS_ENTRY = "com.yzddmr6.prismspace.settings.PrismSettingsActivity";
+
 	public static void broadcast(final Context context, final Intent intent) {
 		if (intent.getComponent() != null || intent.getPackage() != null) throw new IllegalArgumentException("Explicit " + intent);
 		final String[] pkgs = context.getPackageManager().getPackagesForUid(Process.myUid());

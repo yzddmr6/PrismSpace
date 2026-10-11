@@ -17,8 +17,12 @@ class SpaceStateClassifierTest {
         bridge: Boolean? = true,
         owner: Boolean? = true,
         ownerPackage: String? = null,
+        type: VendorProfileType = VendorProfileType.Unknown,
     ) = SpaceProfileFacts(userId, pkg, marker, provisioning, running, unlocked, quiet, bridge,
-        profileOwner = owner, profileOwnerPackage = ownerPackage)
+        profileOwner = owner, profileOwnerPackage = ownerPackage, vendorProfileType = type)
+
+    private fun ownership(vararg profiles: SpaceProfileFacts) =
+        SpaceStateClassifier.ownership(SpaceFacts(profiles.toList()), PRISM_PACKAGE)
 
     private fun classify(facts: SpaceFacts) = SpaceStateClassifier.classify(facts, PRISM_PACKAGE)
 
@@ -116,6 +120,85 @@ class SpaceStateClassifierTest {
         assertFalse(SpaceStateClassifier.ownProfileAbsent(SpaceState.OrphanProfile(22)))
         assertFalse(SpaceStateClassifier.ownProfileAbsent(SpaceState.Healthy(22)))
         assertFalse(SpaceStateClassifier.ownProfileAbsent(SpaceState.HalfProvisioned(22, resumable = true)))
+    }
+
+    // ---- Ownership partition (rank / primary / owned / surplus / managed) ----
+
+    /** TCL T951K evidence: 10 provisioned, 11 and 12 carry only the package. */
+    @Test fun markerProfileIsPrimaryAndPackageOnlyProfilesAreSurplus() {
+        val o = ownership(profile(userId = 10), profile(userId = 11, marker = false), profile(userId = 12, marker = false))
+        assertEquals(10, o.primary)
+        assertEquals(listOf(10), o.owned)
+        assertEquals(listOf(11, 12), o.surplus)
+        assertEquals(listOf(10), o.managed)
+        assertEquals(emptyList<Int>(), o.foreign)
+    }
+
+    @Test fun singlePackageOnlyProfileIsPrimaryAndManagedButNotSurplus() {
+        val o = ownership(profile(userId = 11, marker = false))
+        assertEquals(11, o.primary)
+        assertEquals(emptyList<Int>(), o.owned)
+        assertEquals(emptyList<Int>(), o.surplus)
+        assertEquals(listOf(11), o.managed)
+    }
+
+    @Test fun cloneProfileWithOurPackageIsForeignAndNeverSurplus() {
+        val clone = profile(userId = 999, marker = false, type = VendorProfileType.Clone)
+        val healthy = profile(userId = 25, type = VendorProfileType.Managed)
+        val o = ownership(clone, healthy)
+        assertEquals(25, o.primary)
+        assertEquals(emptyList<Int>(), o.surplus)
+        assertEquals(listOf(999), o.foreign)
+        assertEquals(listOf(25), o.managed)
+        assertEquals(SpaceState.Healthy(25), classify(SpaceFacts(listOf(clone, healthy))))
+        // Even a marker inside a clone/private profile does not make it ours.
+        val privateWithMarker = profile(userId = 30, type = VendorProfileType.Private)
+        assertEquals(null, ownership(privateWithMarker).primary)
+        assertEquals(SpaceState.ForeignProfile(30, null), classify(SpaceFacts(listOf(privateWithMarker))))
+        assertEquals(SpaceState.ForeignProfile(999, null), classify(SpaceFacts(listOf(clone))))
+    }
+
+    @Test fun twoMarkedProfilesAreBothOwnedAndNoneSurplus() {
+        val o = ownership(profile(userId = 12), profile(userId = 10))
+        assertEquals(10, o.primary)
+        assertEquals(listOf(10, 12), o.owned)
+        assertEquals(emptyList<Int>(), o.surplus)
+        assertEquals(listOf(10, 12), o.managed)
+    }
+
+    @Test fun confirmedProfileOwnerCountsAsOwned() {
+        val o = ownership(profile(userId = 11, marker = false), profile(userId = 12, marker = false, ownerPackage = PRISM_PACKAGE))
+        assertEquals(11, o.primary)
+        assertEquals(listOf(12), o.owned)
+        assertEquals(emptyList<Int>(), o.surplus)
+        assertEquals(listOf(11, 12), o.managed)
+    }
+
+    @Test fun partitionIgnoresEnumerationOrder() {
+        val profiles = listOf(
+            profile(userId = 12, marker = false),
+            profile(userId = 999, pkg = false, marker = false),
+            profile(userId = 10),
+            profile(userId = 11, marker = false),
+            profile(userId = 150, marker = false, type = VendorProfileType.Clone),
+        )
+        val expected = ownership(*profiles.toTypedArray())
+        assertEquals(ProfileOwnership(10, listOf(10), listOf(11, 12), listOf(150, 999), listOf(10)), expected)
+        listOf(profiles.reversed(), profiles.shuffled(java.util.Random(7)), profiles.sortedBy { it.userId })
+            .forEach { order -> assertEquals(expected, ownership(*order.toTypedArray())) }
+    }
+
+    @Test fun classifiedStateUserIdAlwaysEqualsPrimary() {
+        val cases = listOf(
+            listOf(profile(userId = 10), profile(userId = 11, marker = false), profile(userId = 12, marker = false)),
+            listOf(profile(userId = 12, marker = false), profile(userId = 11, marker = false)),
+            listOf(profile(userId = 999, pkg = false, marker = false, ownerPackage = PRISM_PACKAGE), profile(userId = 100, marker = false)),
+            listOf(profile(userId = 25, quiet = true), profile(userId = 999, type = VendorProfileType.Clone)),
+        )
+        cases.forEach { profiles ->
+            val facts = SpaceFacts(profiles)
+            assertEquals(SpaceStateClassifier.primary(facts, PRISM_PACKAGE)?.userId, classify(facts).userId)
+        }
     }
 
     private companion object {

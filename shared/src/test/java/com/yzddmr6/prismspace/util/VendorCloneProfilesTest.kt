@@ -1,5 +1,6 @@
 package com.yzddmr6.prismspace.util
 
+import com.yzddmr6.prismspace.space.VendorProfileType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -68,5 +69,14 @@ class VendorCloneProfilesTest {
         assertFalse(VendorCloneProfiles.hasVendorCloneProfile(36, listOf(full, managed)))
         assertFalse(VendorCloneProfiles.hasVendorCloneProfile(36, listOf(full, null)))
         assertEquals("android.os.usertype.profile.CLONE", VendorCloneProfiles.USER_TYPE_PROFILE_CLONE)
+    }
+
+    @Test fun profileTypeMapsPublicUserTypesFromApi35Only() {
+        assertEquals(VendorProfileType.Unknown, VendorCloneProfiles.profileType(34, clone))
+        assertEquals(VendorProfileType.Unknown, VendorCloneProfiles.profileType(35, null))
+        assertEquals(VendorProfileType.Managed, VendorCloneProfiles.profileType(35, managed))
+        assertEquals(VendorProfileType.Clone, VendorCloneProfiles.profileType(35, clone))
+        assertEquals(VendorProfileType.Private, VendorCloneProfiles.profileType(36, "android.os.usertype.profile.PRIVATE"))
+        assertEquals(VendorProfileType.Other, VendorCloneProfiles.profileType(36, "com.vendor.usertype.profile.SECURE"))
     }
 }
