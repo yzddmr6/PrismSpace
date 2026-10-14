@@ -281,6 +281,19 @@ private fun ProfileInstallOutcomeDialog() {
             },
             dismissButton = howToReport,
         )
+        // Nothing in this space could show the confirmation, so the session is already abandoned: no
+        // retry button, only what to change before tapping Install again.
+        is ProfileInstallOutcome.ConfirmUnavailable -> AlertDialog(
+            onDismissRequest = { ProfileApkInstaller.consumeOutcome() },
+            title = { Text(stringResource(R.string.lz_pf_install_confirm_unavailable_title)) },
+            text = { Text(stringResource(R.string.lz_pf_install_confirm_unavailable_body, current.installerLabel ?: "?")) },
+            confirmButton = {
+                TextButton(onClick = { ProfileApkInstaller.consumeOutcome() }) {
+                    Text(stringResource(android.R.string.ok))
+                }
+            },
+            dismissButton = howToReport,
+        )
         is ProfileInstallOutcome.Failed -> AlertDialog(
             onDismissRequest = { ProfileApkInstaller.consumeOutcome() },
             title = { Text(stringResource(R.string.lz_pf_install_failed_title)) },

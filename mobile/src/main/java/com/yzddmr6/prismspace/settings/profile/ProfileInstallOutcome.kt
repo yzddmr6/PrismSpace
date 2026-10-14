@@ -19,6 +19,12 @@ sealed class ProfileInstallOutcome {
     /** The user answered the confirmation with "cancel". */
     object Cancelled : ProfileInstallOutcome()
 
+    /**
+     * No screen in this space could show the session's confirmation, so the session was abandoned.
+     * [installerLabel] is the installer the platform addressed it to.
+     */
+    data class ConfirmUnavailable(val installerLabel: String?) : ProfileInstallOutcome()
+
     /** Any other failure; [message] is the untruncated system status message. */
     data class Failed(val message: String) : ProfileInstallOutcome()
 }

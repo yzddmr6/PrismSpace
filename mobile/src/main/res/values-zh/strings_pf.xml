@@ -47,4 +47,8 @@
     <string name="lz_pf_install_report_hint">回到主空间 → 设置 → 导出诊断，把文件发给我们。</string>
     <string name="lz_pf_install_failed_title">安装失败</string>
     <string name="lz_pf_install_cancelled">已取消安装。</string>
+    <!-- 安装确认交接 -->
+    <string name="lz_pf_install_confirm_direct">安装确认被转给了双开空间里没有的安装器，已改由系统安装器询问你。</string>
+    <string name="lz_pf_install_confirm_unavailable_title">无法打开安装确认</string>
+    <string name="lz_pf_install_confirm_unavailable_body">Android 要求由 %1$s 确认这次安装，但它在双开空间中无法打开，本次安装已取消。请确认双开空间里的系统安装器没有被停用或冻结，并暂时关闭锁定或替换默认安装器的模块（如 InxLocker）后再点「安装」；如果主空间已配置 Shizuku 或 ROOT，也可以回到主空间用相应模式重新添加分身。</string>
 </resources>

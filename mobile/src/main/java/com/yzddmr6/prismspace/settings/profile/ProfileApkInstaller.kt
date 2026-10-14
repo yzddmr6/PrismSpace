@@ -1,6 +1,7 @@
 package com.yzddmr6.prismspace.settings.profile
 
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
@@ -36,13 +37,13 @@ import kotlinx.coroutines.flow.asStateFlow
  *  - foreground → dodges the BAL block that kills launching the installer from the main space;
  *  - the system "confirm install" UI is routed by PackageInstaller to the real system installer, NOT
  *    via an ACTION_VIEW resolve — so a hijacked APK default handler (e.g. Termux) can't intercept it;
+ *    a hook that re-addresses it to an installer this space lacks is answered by [startAddressed];
  *  - all splits go into one session → split apps (X/Twitter) actually install.
  */
 object ProfileApkInstaller {
 
     private const val TAG = "Prism.PAI"
     private const val ACTION_RESULT = "com.yzddmr6.prismspace.action.PROFILE_INSTALL_RESULT"
-    private const val EXTRA_BASE = "base"
     private const val EXTRA_PACKAGE = "package"
 
     /**
@@ -56,8 +57,11 @@ object ProfileApkInstaller {
         @Volatile var pendingAt: Long? = null
         /** "<package>/<versionName>" of the confirmation activity, for diagnostics and the dialog. */
         @Volatile var installerLabel: String? = null
+        /** The confirmation as it actually started; started again when Install is tapped while it waits. */
+        @Volatile var confirm: Intent? = null
     }
 
+    /** The one in-flight install per package, see [repeatInstallTap]. */
     private val sessions = ConcurrentHashMap<String, PendingSession>()
 
     private val outcomeState = MutableStateFlow<ProfileInstallOutcome?>(null)
@@ -89,6 +93,7 @@ object ProfileApkInstaller {
         val appCtx = context.applicationContext
         val loc = PrismLocale.wrap(context)
         DiagnosticLog.i(TAG, "profile apk install requested pkg=$pkg label=$label")
+        sessions[pkg]?.let { inFlight -> if (resumeInFlight(appCtx, loc, pkg, inFlight)) return }
         // A no-privilege session install needs PrismSpace's own "install unknown apps" op.
         // Some ROMs block immediately when it is missing, so guide the user to grant it first.
         // Cleared DISALLOW_INSTALL_UNKNOWN_SOURCES is necessary but not sufficient.
@@ -114,6 +119,7 @@ object ProfileApkInstaller {
         DiagnosticLog.i(TAG, "profile apk install session start pkg=$pkg files=${uris.size}")
         Toast.makeText(context, loc.getString(R.string.lz_pf_install_started), Toast.LENGTH_SHORT).show()
         Thread {
+            var committed = false
             try {
                 val installer = appCtx.packageManager.packageInstaller
                 val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
@@ -130,20 +136,43 @@ object ProfileApkInstaller {
                     }
                     val callback = Intent(ACTION_RESULT)
                         .setPackage(appCtx.packageName)
-                        .putExtra(EXTRA_BASE, safeBase)
                         .putExtra(EXTRA_PACKAGE, pkg)
                     val pi = PendingIntent.getBroadcast(
                         appCtx, sessionId, callback,
                         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
                     session.commit(pi.intentSender)
+                    committed = true
                     DiagnosticLog.i(TAG, "profile apk install session committed pkg=$pkg sessionId=$sessionId")
                 }
             } catch (e: Exception) {
-                sessions.remove(pkg)
                 DiagnosticLog.e(TAG, "session install failed for $pkg", e)
+                if (committed) return@Thread    // The system owns it now and reports its outcome.
+                sessions.remove(pkg, pending)
+                abandon(appCtx, pending.sessionId)
                 showToast(appCtx, loc.getString(R.string.lz_pf_install_failed, e.message ?: e.javaClass.simpleName))
             }
         }.start()
+    }
+
+    /**
+     * Install tapped again while [inFlight] has not finished: never stage the suite a second time.
+     * False only when the system no longer has its session, so a fresh one may start.
+     */
+    private fun resumeInFlight(appCtx: Context, loc: Context, pkg: String, inFlight: PendingSession): Boolean {
+        val sessionId = inFlight.sessionId
+        val alive = if (sessionId < 0) null else runCatching {
+            appCtx.packageManager.packageInstaller.getSessionInfo(sessionId) != null
+        }.getOrDefault(true)
+        val confirm = inFlight.confirm
+        val tap = repeatInstallTap(alive, confirmationShown = confirm != null)
+        DiagnosticLog.i(TAG, "profile apk install already in flight pkg=$pkg sessionId=$sessionId tap=$tap")
+        when (tap) {
+            RepeatInstallTap.StartOver -> { sessions.remove(pkg, inFlight); return false }
+            RepeatInstallTap.StillPreparing ->
+                Toast.makeText(appCtx, loc.getString(R.string.lz_pf_install_started), Toast.LENGTH_SHORT).show()
+            RepeatInstallTap.ShowConfirmation -> confirm?.let { showConfirmation(appCtx, loc, pkg, inFlight, sessionId, it) }
+        }
+        return true
     }
 
     /**
@@ -206,55 +235,45 @@ object ProfileApkInstaller {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(c: Context, intent: Intent) {
                 val loc = PrismLocale.wrap(c)
+                val packageName = intent.getStringExtra(EXTRA_PACKAGE)
+                val sessionId = intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1)
                 when (val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)) {
                     PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                         DiagnosticLog.i(TAG, "profile apk install pending user confirm")
                         // Foreground confirm — the user just tapped 安装, so the app is foreground and BAL allows it.
                         @Suppress("DEPRECATION") val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
-                        if (confirm != null) {
-                            confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            runCatching { c.startActivity(confirm) }
-                                .onSuccess {
-                                    // The clock starts only once the confirmation is really on screen:
-                                    // an abort arriving before a human could answer is the installer's own.
-                                    val pending = intent.getStringExtra(EXTRA_PACKAGE)?.let { sessions[it] }
-                                    val installer = confirmInstallerLabel(c, confirm)
-                                    pending?.installerLabel = installer
-                                    pending?.pendingAt = SystemClock.elapsedRealtime()
-                                    val sessionId = intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, pending?.sessionId ?: -1)
-                                    DiagnosticLog.i(TAG, "profile apk install confirm launched installer=$installer sessionId=$sessionId")
-                                }
-                                .onFailure { DiagnosticLog.e(TAG, "cannot launch install confirm", it) }
-                        }
+                        val pending = packageName?.let { sessions[it] }?.takeIf { isStatusFor(it.sessionId, sessionId) }
+                        showConfirmation(c, loc, packageName, pending, sessionId, confirm?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     }
                     PackageInstaller.STATUS_SUCCESS -> {
-                        val packageName = intent.getStringExtra(EXTRA_PACKAGE)
-                        packageName?.let { sessions.remove(it) }
+                        packageName?.let { release(it, sessionId) }
                         DiagnosticLog.i(TAG, "profile apk install success pkg=$packageName")
                         completeInstall(c, loc, packageName)
                     }
                     else -> {
                         val msg = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "status=$status"
-                        val packageName = intent.getStringExtra(EXTRA_PACKAGE)
-                        val pending = packageName?.let { sessions.remove(it) }
+                        val pending = packageName?.let { release(it, sessionId) }
+                        if (packageName == null || pending == null) {
+                            // A session already given up on, e.g. abandoned because nothing could confirm it.
+                            DiagnosticLog.i(TAG, "profile apk install status for untracked session ignored pkg=$packageName sessionId=$sessionId status=$status message=$msg")
+                            return
+                        }
                         // A vendor installer may install the app itself and still abort the session
                         // (cf. F-Droid #2837), so believe the package state, not the status code.
-                        val installedNow = packageName != null && isInstalledHere(c, packageName)
-                        val elapsedMs = pending?.pendingAt?.let { SystemClock.elapsedRealtime() - it }
+                        val installedNow = isInstalledHere(c, packageName)
+                        val elapsedMs = pending.pendingAt?.let { SystemClock.elapsedRealtime() - it }
                         // The APK set lives in MediaStore (content URIs); there is no file path to feed
                         // getPackageArchiveInfo cheaply, so the version comparison is skipped and the
                         // installed flag decides. Only packages absent from this profile are offered
                         // for install, so the flag flipping to true means this session landed.
-                        val apks = pending?.apks
-                            ?: intent.getStringExtra(EXTRA_BASE)?.let { queryExactApkSet(c.applicationContext, it) }
-                            ?: emptyList()
+                        val apks = pending.apks
                         val outcome = profileInstallOutcome(
                             status = status,
                             message = msg,
                             installedNow = installedNow,
                             elapsedMs = elapsedMs,
                             apkCount = apks.size,
-                            installerLabel = pending?.installerLabel,
+                            installerLabel = pending.installerLabel,
                         )
                         when (outcome) {
                             is ProfileInstallOutcome.Succeeded -> {
@@ -262,7 +281,7 @@ object ProfileApkInstaller {
                                 completeInstall(c, loc, packageName)
                             }
                             is ProfileInstallOutcome.Refused -> {
-                                DiagnosticLog.w(TAG, "profile apk install refused by system installer status=$status message=$msg elapsedMs=$elapsedMs installer=${pending?.installerLabel}")
+                                DiagnosticLog.w(TAG, "profile apk install refused by system installer status=$status message=$msg elapsedMs=$elapsedMs installer=${pending.installerLabel}")
                                 refusedApk = apks.singleOrNull()
                                 refusedPackage = packageName
                                 outcomeState.value = outcome
@@ -275,6 +294,7 @@ object ProfileApkInstaller {
                                 DiagnosticLog.w(TAG, "profile apk install failed status=$status message=$msg")
                                 outcomeState.value = outcome
                             }
+                            is ProfileInstallOutcome.ConfirmUnavailable -> Unit     // Only showConfirmation decides this.
                         }
                     }
                 }
@@ -331,6 +351,73 @@ object ProfileApkInstaller {
     }.getOrNull()
 
     /**
+     * Put a session's confirmation on screen, or end the session and say why: a session whose
+     * confirmation no screen can show never finishes, it only keeps a staged copy of the APK set.
+     */
+    private fun showConfirmation(c: Context, loc: Context, pkg: String?, pending: PendingSession?, sessionId: Int, confirm: Intent?) {
+        val shown = confirm?.let { startAddressed(c, it) }
+        val installer = (shown ?: confirm)?.let { confirmInstallerLabel(c, it) } ?: confirm?.`package`
+        if (shown == null) {
+            DiagnosticLog.e(TAG, "profile apk install confirm unavailable installer=$installer sessionId=$sessionId hasIntent=${confirm != null}, abandoning")
+            if (pkg != null && pending != null) sessions.remove(pkg, pending)
+            abandon(c, sessionId)
+            outcomeState.value = ProfileInstallOutcome.ConfirmUnavailable(installer)
+            return
+        }
+        if (shown !== confirm) Toast.makeText(c, loc.getString(R.string.lz_pf_install_confirm_direct), Toast.LENGTH_LONG).show()
+        if (pending != null) {
+            // The clock starts only once the confirmation is really on screen:
+            // an abort arriving before a human could answer is the installer's own.
+            if (pending.pendingAt == null) pending.pendingAt = SystemClock.elapsedRealtime()
+            pending.installerLabel = installer
+            pending.confirm = shown
+        }
+        DiagnosticLog.i(TAG, "profile apk install confirm launched installer=$installer sessionId=$sessionId direct=${shown !== confirm}")
+    }
+
+    /**
+     * Start [intent], addressed by package to one installer; returns the intent that actually started.
+     *
+     * First as addressed, so an installer the user routed it to that this space really has still gets
+     * it. A hook that re-addresses installs to a preferred installer without checking the user leaves
+     * it resolving to nothing here (InxLocker sending it to an InstallerX only the main space has,
+     * #29); the addressee's own activity in this user is then started explicitly, which such hooks
+     * leave alone.
+     */
+    private fun startAddressed(c: Context, intent: Intent): Intent? {
+        val routed = runCatching { c.startActivity(intent) }
+        if (routed.isSuccess) return intent
+        val direct = if (intent.component != null) null else addresseeActivity(c, intent)?.let { Intent(intent).setComponent(it) }
+        DiagnosticLog.w(TAG, "profile apk install start as addressed failed target=${intent.`package`} direct=${direct?.component?.flattenToShortString()}",
+            routed.exceptionOrNull())
+        if (direct == null) return null
+        return runCatching { c.startActivity(direct) }.fold(
+            onSuccess = { direct },
+            onFailure = { DiagnosticLog.e(TAG, "profile apk install direct start failed", it); null },
+        )
+    }
+
+    /** The matching activity of the package [intent] is addressed to, resolved in this user. */
+    private fun addresseeActivity(c: Context, intent: Intent): ComponentName? {
+        val pkg = intent.`package` ?: return null
+        @Suppress("DEPRECATION")
+        val matches = runCatching { c.packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY) }.getOrNull()
+        val activity = matches?.firstOrNull { it.activityInfo?.packageName == pkg }?.activityInfo ?: return null
+        return ComponentName(activity.packageName, activity.name)
+    }
+
+    /** Stop tracking [pkg]'s install if the status is about its session; null for any other session. */
+    private fun release(pkg: String, statusSessionId: Int): PendingSession? =
+        sessions[pkg]?.takeIf { isStatusFor(it.sessionId, statusSessionId) && sessions.remove(pkg, it) }
+
+    /** Drop a session nothing will finish, rather than leave its staged copy until the system reaps it. */
+    private fun abandon(c: Context, sessionId: Int) {
+        if (sessionId < 0) return
+        runCatching { c.packageManager.packageInstaller.abandonSession(sessionId) }
+            .onFailure { DiagnosticLog.w(TAG, "profile apk install abandon failed sessionId=$sessionId", it) }
+    }
+
+    /**
      * Hand the single copied APK to the system installer after the session was refused. Same probe
      * as SystemAppsManager uses for the critical installer activity, so a hijacked APK default
      * handler cannot take this over.
@@ -348,6 +435,8 @@ object ProfileApkInstaller {
             .setDataAndType(uri, "application/vnd.android.package-archive")
             .setPackage(installerPkg)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        // This button promises the system installer: address its activity, not just its package (#29).
+        addresseeActivity(context, view)?.let { view.component = it }
         runCatching { context.startActivity(view) }
             .onSuccess { DiagnosticLog.i(TAG, "profile apk install open with system installer pkg=$refusedPackage installer=$installerPkg") }
             .onFailure {

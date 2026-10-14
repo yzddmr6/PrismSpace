@@ -47,4 +47,8 @@
     <string name="lz_pf_install_report_hint">Go back to the main space → Settings → Export diagnostics and send us the file.</string>
     <string name="lz_pf_install_failed_title">Install failed</string>
     <string name="lz_pf_install_cancelled">Install cancelled.</string>
+    <!-- Install confirmation hand-off -->
+    <string name="lz_pf_install_confirm_direct">The install confirmation was routed to an installer the dual space doesn\'t have, so the system installer asks you instead.</string>
+    <string name="lz_pf_install_confirm_unavailable_title">Can\'t open the install confirmation</string>
+    <string name="lz_pf_install_confirm_unavailable_body">Android asked %1$s to confirm this install, but it can\'t be opened in the dual space, so the install was cancelled. Make sure the system installer isn\'t disabled or frozen in the dual space and temporarily turn off any module that locks or replaces the default installer (e.g. InxLocker), then tap Install again; if Shizuku or ROOT is set up in the main space, you can also go back and add the clone again in that mode.</string>
 </resources>

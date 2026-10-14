@@ -22,4 +22,8 @@
     <string name="lz_pf_install_report_hint">回到主空間 → 設定 → 匯出診斷，把檔案傳給我們。</string>
     <string name="lz_pf_install_failed_title">安裝失敗</string>
     <string name="lz_pf_install_cancelled">已取消安裝。</string>
+    <!-- 安裝確認交接 -->
+    <string name="lz_pf_install_confirm_direct">安裝確認被轉給了雙開空間裡沒有的安裝器，已改由系統安裝器詢問你。</string>
+    <string name="lz_pf_install_confirm_unavailable_title">無法開啟安裝確認</string>
+    <string name="lz_pf_install_confirm_unavailable_body">Android 要求由 %1$s 確認這次安裝，但它在雙開空間中無法開啟，本次安裝已取消。請確認雙開空間裡的系統安裝器沒有被停用或凍結，並暫時關閉鎖定或替換預設安裝器的模組（如 InxLocker）後再點「安裝」；如果主空間已設定 Shizuku 或 ROOT，也可以回到主空間用對應模式重新新增分身。</string>
 </resources>
